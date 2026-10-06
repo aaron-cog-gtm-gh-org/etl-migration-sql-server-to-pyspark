@@ -1,0 +1,53 @@
+{
+  "name": "PL_Quality_Holds",
+  "properties": {
+    "description": "Open quality holds to rpt.open_quality_holds; export to curated.",
+    "parameters": { "AsOfUtc": { "type": "string" } },
+    "activities": [
+      {
+        "name": "SP_StgQualitySamples",
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": { "storedProcedureName": "mes.usp_stg_quality_samples" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "SP_MergeQualityHoldStatus",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [{ "activity": "SP_StgQualitySamples", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "storedProcedureName": "mes.usp_merge_quality_hold_status",
+          "storedProcedureParameters": {
+            "AsOfUtc": { "value": "@pipeline().parameters.AsOfUtc", "type": "String" }
+          }
+        },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "SP_RptOpenQualityHolds",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [{ "activity": "SP_MergeQualityHoldStatus", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "storedProcedureName": "rpt.usp_rpt_open_quality_holds",
+          "storedProcedureParameters": {
+            "AsOfUtc": { "value": "@pipeline().parameters.AsOfUtc", "type": "String" }
+          }
+        },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "COPY_rpt_open_quality_holds_to_curated",
+        "type": "Copy",
+        "dependsOn": [{ "activity": "SP_RptOpenQualityHolds", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "source": { "type": "SqlServerSource", "queryTimeout": "02:00:00" },
+          "sink":   { "type": "ParquetSink", "storeSettings": { "type": "AzureBlobFSWriteSettings" } },
+          "enableStaging": false
+        },
+        "inputs":  [{ "referenceName": "DS_SqlServer_MES_Table", "type": "DatasetReference",
+                      "parameters": { "tableName": "open_quality_holds" } }],
+        "outputs": [{ "referenceName": "DS_ADLS_Curated_Parquet", "type": "DatasetReference",
+                      "parameters": { "report": "open_quality_holds" } }]
+      }
+    ]
+  }
+}

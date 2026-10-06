@@ -1,0 +1,11 @@
+reason_code,reason_desc,reason_category,planned_default
+R-JAM,Sheet jam / web break,Mechanical,0
+R-BRG,Bearing / drive fault,Mechanical,0
+R-ELE,Electrical fault,Electrical,0
+R-CO,Changeover / grade change,Changeover,1
+R-MAT,Material starvation,Material,0
+R-QLT,Quality hold adjustment,Quality,0
+R-PM,Preventive maintenance window,Planned,1
+R-SAN,Sanitation / clean cycle,Planned,1
+R-OPR,Operator assistance,Operational,0
+R-OTH,Unclassified,Other,0

@@ -1,0 +1,16 @@
+{
+  "name": "DS_SqlServer_MES_Table",
+  "properties": {
+    "type": "SqlServerTable",
+    "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" },
+    "parameters": {
+      "schemaName": { "type": "string", "defaultValue": "rpt" },
+      "tableName":  { "type": "string" }
+    },
+    "schema": [],
+    "typeProperties": {
+      "schema": { "type": "string", "value": "@dataset().schemaName" },
+      "table":  { "type": "string", "value": "@dataset().tableName" }
+    }
+  }
+}

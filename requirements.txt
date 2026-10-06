@@ -1,0 +1,6 @@
+pyspark==3.5.3
+pandas>=2.0
+pyarrow>=14.0
+pytest>=8.0
+pyyaml>=6.0
+pymssql>=2.3

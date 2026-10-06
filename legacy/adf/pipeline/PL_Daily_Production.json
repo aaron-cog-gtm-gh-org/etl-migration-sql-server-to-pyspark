@@ -1,0 +1,36 @@
+{
+  "name": "PL_Daily_Production",
+  "properties": {
+    "description": "Daily production units/cases/yield to rpt.daily_production; export to curated.",
+    "parameters": { "AsOfUtc": { "type": "string" } },
+    "activities": [
+      {
+        "name": "SP_StgProductionCounts",
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": { "storedProcedureName": "mes.usp_stg_production_counts" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "SP_RptDailyProduction",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [{ "activity": "SP_StgProductionCounts", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": { "storedProcedureName": "rpt.usp_rpt_daily_production" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "COPY_rpt_daily_production_to_curated",
+        "type": "Copy",
+        "dependsOn": [{ "activity": "SP_RptDailyProduction", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "source": { "type": "SqlServerSource", "queryTimeout": "02:00:00" },
+          "sink":   { "type": "ParquetSink", "storeSettings": { "type": "AzureBlobFSWriteSettings" } },
+          "enableStaging": false
+        },
+        "inputs":  [{ "referenceName": "DS_SqlServer_MES_Table", "type": "DatasetReference",
+                      "parameters": { "tableName": "daily_production" } }],
+        "outputs": [{ "referenceName": "DS_ADLS_Curated_Parquet", "type": "DatasetReference",
+                      "parameters": { "report": "daily_production" } }]
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+plant_id,plant_name,tz_name,shift_pattern
+PLT01,Neenah Tissue,Central Standard Time,3x8
+PLT02,Jacksonville Paper,Eastern Standard Time,3x8
+PLT03,Reno Converting,Pacific Standard Time,3x8
+PLT04,Monterrey Wipes,Central Standard Time (Mexico),3x8
+PLT05,Sao Paulo Tissue,E. South America Standard Time,2x12
+PLT06,Hull Wipes,GMT Standard Time,2x12

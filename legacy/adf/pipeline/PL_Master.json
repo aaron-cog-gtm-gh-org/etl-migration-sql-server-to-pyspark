@@ -1,0 +1,103 @@
+{
+  "name": "PL_Master",
+  "properties": {
+    "description": "Nightly orchestrator. Refreshes shift calendar, runs report pipelines; OEE depends on Line_Downtime + Daily_Production.",
+    "parameters": {
+      "AsOfUtc":    { "type": "string" },
+      "WindowDays": { "type": "int", "defaultValue": 28 }
+    },
+    "activities": [
+      {
+        "name": "LKP_WindowStart",
+        "type": "Lookup",
+        "typeProperties": {
+          "source": {
+            "type": "SqlServerSource",
+            "sqlReaderQuery": "SELECT CONVERT(varchar(10), MIN(calendar_date), 23) AS min_day, COUNT(*) AS n_days FROM dim.calendar",
+            "queryTimeout": "02:00:00"
+          },
+          "dataset": { "referenceName": "DS_SqlServer_MES_Table", "type": "DatasetReference",
+                       "parameters": { "tableName": "calendar" } },
+          "firstRowOnly": true
+        },
+        "policy": { "timeout": "0.12:00:00", "retry": 1, "retryIntervalInSeconds": 30 }
+      },
+      {
+        "name": "SP_RefreshShiftCalendar",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [{ "activity": "LKP_WindowStart", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "storedProcedureName": "dim.usp_refresh_shift_calendar",
+          "storedProcedureParameters": {
+            "StartDate": { "value": "@activity('LKP_WindowStart').output.firstRow.min_day", "type": "String" },
+            "Days":      { "value": "@pipeline().parameters.WindowDays", "type": "Int32" }
+          }
+        },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "EP_PL_Line_Downtime",
+        "type": "ExecutePipeline",
+        "dependsOn": [{ "activity": "SP_RefreshShiftCalendar", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "pipeline": { "referenceName": "PL_Line_Downtime", "type": "PipelineReference" },
+          "waitOnCompletion": true,
+          "parameters": { "AsOfUtc": "@pipeline().parameters.AsOfUtc" }
+        }
+      },
+      {
+        "name": "EP_PL_Daily_Production",
+        "type": "ExecutePipeline",
+        "dependsOn": [{ "activity": "SP_RefreshShiftCalendar", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "pipeline": { "referenceName": "PL_Daily_Production", "type": "PipelineReference" },
+          "waitOnCompletion": true,
+          "parameters": { "AsOfUtc": "@pipeline().parameters.AsOfUtc" }
+        }
+      },
+      {
+        "name": "EP_PL_OEE",
+        "type": "ExecutePipeline",
+        "dependsOn": [
+          { "activity": "EP_PL_Line_Downtime",    "dependencyConditions": ["Succeeded"] },
+          { "activity": "EP_PL_Daily_Production", "dependencyConditions": ["Succeeded"] }
+        ],
+        "typeProperties": {
+          "pipeline": { "referenceName": "PL_OEE", "type": "PipelineReference" },
+          "waitOnCompletion": true,
+          "parameters": { "AsOfUtc": "@pipeline().parameters.AsOfUtc" }
+        }
+      },
+      {
+        "name": "EP_PL_Quality_Holds",
+        "type": "ExecutePipeline",
+        "dependsOn": [{ "activity": "SP_RefreshShiftCalendar", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "pipeline": { "referenceName": "PL_Quality_Holds", "type": "PipelineReference" },
+          "waitOnCompletion": true,
+          "parameters": { "AsOfUtc": "@pipeline().parameters.AsOfUtc" }
+        }
+      },
+      {
+        "name": "EP_PL_Scrap_Yield",
+        "type": "ExecutePipeline",
+        "dependsOn": [{ "activity": "EP_PL_Daily_Production", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "pipeline": { "referenceName": "PL_Scrap_Yield", "type": "PipelineReference" },
+          "waitOnCompletion": true,
+          "parameters": { "AsOfUtc": "@pipeline().parameters.AsOfUtc" }
+        }
+      },
+      {
+        "name": "EP_PL_Material_Consumption",
+        "type": "ExecutePipeline",
+        "dependsOn": [{ "activity": "SP_RefreshShiftCalendar", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "pipeline": { "referenceName": "PL_Material_Consumption", "type": "PipelineReference" },
+          "waitOnCompletion": true,
+          "parameters": { "AsOfUtc": "@pipeline().parameters.AsOfUtc" }
+        }
+      }
+    ]
+  }
+}

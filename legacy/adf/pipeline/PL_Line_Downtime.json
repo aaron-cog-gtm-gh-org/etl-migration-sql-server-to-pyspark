@@ -1,0 +1,51 @@
+{
+  "name": "PL_Line_Downtime",
+  "properties": {
+    "description": "Downtime: UTC -> plant local, split at shift boundaries, daily rollup to rpt.line_downtime_daily; export to curated.",
+    "parameters": { "AsOfUtc": { "type": "string" } },
+    "activities": [
+      {
+        "name": "SP_StgDowntimeLocal",
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": {
+          "storedProcedureName": "mes.usp_stg_downtime_local",
+          "storedProcedureParameters": {
+            "AsOfUtc": { "value": "@pipeline().parameters.AsOfUtc", "type": "String" }
+          }
+        },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" },
+        "policy": { "timeout": "0.12:00:00", "retry": 2, "retryIntervalInSeconds": 60 }
+      },
+      {
+        "name": "SP_SplitDowntimeByShift",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [{ "activity": "SP_StgDowntimeLocal", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": { "storedProcedureName": "mes.usp_split_downtime_by_shift" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "SP_RptLineDowntimeDaily",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [{ "activity": "SP_SplitDowntimeByShift", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": { "storedProcedureName": "rpt.usp_rpt_line_downtime_daily" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "COPY_rpt_line_downtime_daily_to_curated",
+        "type": "Copy",
+        "dependsOn": [{ "activity": "SP_RptLineDowntimeDaily", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "source": { "type": "SqlServerSource", "queryTimeout": "02:00:00" },
+          "sink":   { "type": "ParquetSink", "storeSettings": { "type": "AzureBlobFSWriteSettings" } },
+          "enableStaging": false,
+          "translator": { "type": "TabularTranslator", "typeConversion": true,
+                          "typeConversionSettings": { "allowDataTruncation": false } }
+        },
+        "inputs":  [{ "referenceName": "DS_SqlServer_MES_Table", "type": "DatasetReference",
+                      "parameters": { "tableName": "line_downtime_daily" } }],
+        "outputs": [{ "referenceName": "DS_ADLS_Curated_Parquet", "type": "DatasetReference",
+                      "parameters": { "report": "line_downtime_daily" } }]
+      }
+    ]
+  }
+}

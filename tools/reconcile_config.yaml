@@ -1,0 +1,24 @@
+# Report -> legacy rpt table / key contract.
+# Each report reconciles out/<NS>/curated/<report>/*.parquet against
+# legacy_snapshots/<table>.csv.
+reports:
+  line_downtime_daily:
+    table: rpt.line_downtime_daily
+    keys: [plant_id, line_id, production_day, shift_code, reason_category, planned_flag]
+  daily_production:
+    table: rpt.daily_production
+    keys: [plant_id, line_id, production_day, sku_id]
+  oee_shift:
+    table: rpt.oee_shift
+    keys: [plant_id, line_id, production_day, shift_code]
+  open_quality_holds:
+    table: rpt.open_quality_holds
+    keys: [lot_id]
+  scrap_yield_weekly:
+    table: rpt.scrap_yield_weekly
+    keys: [plant_id, line_id, iso_year, iso_week]
+  material_variance:
+    table: rpt.material_variance
+    keys: [order_id, material_code]
+numeric_tolerance: 0.000001
+sample_diffs: 10

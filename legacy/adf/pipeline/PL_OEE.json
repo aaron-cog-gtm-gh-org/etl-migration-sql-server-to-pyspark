@@ -1,0 +1,36 @@
+{
+  "name": "PL_OEE",
+  "properties": {
+    "description": "OEE per line/shift to rpt.oee_shift. Depends on PL_Line_Downtime + PL_Daily_Production staging outputs.",
+    "parameters": { "AsOfUtc": { "type": "string" } },
+    "activities": [
+      {
+        "name": "SP_CalcPlannedTime",
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": { "storedProcedureName": "mes.usp_calc_planned_time" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "SP_RptOeeShift",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [{ "activity": "SP_CalcPlannedTime", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": { "storedProcedureName": "rpt.usp_rpt_oee_shift" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "COPY_rpt_oee_shift_to_curated",
+        "type": "Copy",
+        "dependsOn": [{ "activity": "SP_RptOeeShift", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "source": { "type": "SqlServerSource", "queryTimeout": "02:00:00" },
+          "sink":   { "type": "ParquetSink", "storeSettings": { "type": "AzureBlobFSWriteSettings" } },
+          "enableStaging": false
+        },
+        "inputs":  [{ "referenceName": "DS_SqlServer_MES_Table", "type": "DatasetReference",
+                      "parameters": { "tableName": "oee_shift" } }],
+        "outputs": [{ "referenceName": "DS_ADLS_Curated_Parquet", "type": "DatasetReference",
+                      "parameters": { "report": "oee_shift" } }]
+      }
+    ]
+  }
+}

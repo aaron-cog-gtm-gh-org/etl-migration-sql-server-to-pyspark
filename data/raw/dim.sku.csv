@@ -1,0 +1,9 @@
+sku_id,product_name,pack_size,ideal_units_per_min
+SKU-TT24,"Bath tissue 2-ply, 24 roll case",24,240
+SKU-TT18,"Bath tissue 1-ply, 18 roll case",18,210
+SKU-FT30,"Facial tissue cube, 30 box case",30,300
+SKU-DP32,"Diaper size 4, 32 ct case",32,180
+SKU-DP40,"Diaper size 5, 40 ct case",40,190
+SKU-WP36,"Wet wipes tub, 36 ct case",36,260
+SKU-WP12,"Wet wipes travel, 12 pk case",12,150
+SKU-TT12,"Bath tissue 3-ply, 12 roll case",12,200

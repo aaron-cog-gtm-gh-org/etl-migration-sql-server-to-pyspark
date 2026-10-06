@@ -1,0 +1,36 @@
+{
+  "name": "PL_Scrap_Yield",
+  "properties": {
+    "description": "Weekly scrap vs yield per line to rpt.scrap_yield_weekly; export to curated.",
+    "parameters": { "AsOfUtc": { "type": "string" } },
+    "activities": [
+      {
+        "name": "SP_AllocateScrapToOrders",
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": { "storedProcedureName": "mes.usp_allocate_scrap_to_orders" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "SP_RptScrapYieldWeekly",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [{ "activity": "SP_AllocateScrapToOrders", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": { "storedProcedureName": "rpt.usp_rpt_scrap_yield_weekly" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "COPY_rpt_scrap_yield_weekly_to_curated",
+        "type": "Copy",
+        "dependsOn": [{ "activity": "SP_RptScrapYieldWeekly", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "source": { "type": "SqlServerSource", "queryTimeout": "02:00:00" },
+          "sink":   { "type": "ParquetSink", "storeSettings": { "type": "AzureBlobFSWriteSettings" } },
+          "enableStaging": false
+        },
+        "inputs":  [{ "referenceName": "DS_SqlServer_MES_Table", "type": "DatasetReference",
+                      "parameters": { "tableName": "scrap_yield_weekly" } }],
+        "outputs": [{ "referenceName": "DS_ADLS_Curated_Parquet", "type": "DatasetReference",
+                      "parameters": { "report": "scrap_yield_weekly" } }]
+      }
+    ]
+  }
+}

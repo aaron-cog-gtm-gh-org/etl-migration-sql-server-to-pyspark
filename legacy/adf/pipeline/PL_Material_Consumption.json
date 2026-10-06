@@ -1,0 +1,36 @@
+{
+  "name": "PL_Material_Consumption",
+  "properties": {
+    "description": "Standard vs actual material variance per order to rpt.material_variance; export to curated.",
+    "parameters": { "AsOfUtc": { "type": "string" } },
+    "activities": [
+      {
+        "name": "SP_StgMaterialMovements",
+        "type": "SqlServerStoredProcedure",
+        "typeProperties": { "storedProcedureName": "mes.usp_stg_material_movements" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "SP_RptMaterialVariance",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [{ "activity": "SP_StgMaterialMovements", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": { "storedProcedureName": "rpt.usp_rpt_material_variance" },
+        "linkedServiceName": { "referenceName": "LS_SqlServer_MES", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "COPY_rpt_material_variance_to_curated",
+        "type": "Copy",
+        "dependsOn": [{ "activity": "SP_RptMaterialVariance", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "source": { "type": "SqlServerSource", "queryTimeout": "02:00:00" },
+          "sink":   { "type": "ParquetSink", "storeSettings": { "type": "AzureBlobFSWriteSettings" } },
+          "enableStaging": false
+        },
+        "inputs":  [{ "referenceName": "DS_SqlServer_MES_Table", "type": "DatasetReference",
+                      "parameters": { "tableName": "material_variance" } }],
+        "outputs": [{ "referenceName": "DS_ADLS_Curated_Parquet", "type": "DatasetReference",
+                      "parameters": { "report": "material_variance" } }]
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "LS_ADLS_Curated",
+  "properties": {
+    "type": "AzureBlobFS",
+    "typeProperties": {
+      "url": "https://nwhmfglake.dfs.core.windows.net",
+      "accountKind": "StorageV2",
+      "servicePrincipalId": "9f1c2a44-0000-4b11-9d77-nwhspnplaceholder",
+      "servicePrincipalKey": {
+        "type": "AzureKeyVaultSecret",
+        "store": { "referenceName": "LS_AKV_NWH", "type": "LinkedServiceReference" },
+        "secretName": "adls-spn-key"
+      },
+      "tenant": "72f988bf-0000-41af-91ab-nwhtenant"
+    }
+  }
+}

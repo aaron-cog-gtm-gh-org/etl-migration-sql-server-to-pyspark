@@ -1,0 +1,21 @@
+{
+  "name": "TR_Daily_0630_UTC",
+  "properties": {
+    "type": "ScheduleTrigger",
+    "typeProperties": {
+      "recurrence": {
+        "frequency": "Day",
+        "interval": 1,
+        "startTime": "2026-01-05T06:30:00Z",
+        "timeZone": "UTC",
+        "schedule": { "hours": [6], "minutes": [30] }
+      }
+    },
+    "pipelines": [
+      {
+        "pipelineReference": { "referenceName": "PL_Master", "type": "PipelineReference" },
+        "parameters": { "AsOfUtc": "@trigger().scheduledTime" }
+      }
+    ]
+  }
+}
