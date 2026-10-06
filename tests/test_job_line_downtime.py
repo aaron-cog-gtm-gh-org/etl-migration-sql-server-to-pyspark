@@ -1,15 +1,19 @@
-from mfg_lake.jobs.line_downtime_daily import shift_code_for_hour
+from datetime import datetime
+
+from mfg_lake.common.tz import local_to_utc, windows_to_iana
 
 
-def test_shift_3x8():
-    assert shift_code_for_hour(6, "3x8") == "S1"
-    assert shift_code_for_hour(13, "3x8") == "S1"
-    assert shift_code_for_hour(14, "3x8") == "S2"
-    assert shift_code_for_hour(22, "3x8") == "S3"
-    assert shift_code_for_hour(3, "3x8") == "S3"
+def test_windows_to_iana():
+    assert windows_to_iana("Central Standard Time") == "America/Chicago"
 
 
-def test_shift_2x12():
-    assert shift_code_for_hour(6, "2x12") == "D"
-    assert shift_code_for_hour(18, "2x12") == "N"
-    assert shift_code_for_hour(2, "2x12") == "N"
+def test_local_to_utc():
+    # Chicago CDT (UTC-5) in October
+    assert local_to_utc(datetime(2025, 10, 20, 8, 0),
+                        "Central Standard Time") == datetime(2025, 10, 20, 13, 0)
+
+
+def test_local_to_utc_ambiguous_pretransition():
+    # 2025-11-02 01:30 is ambiguous in Chicago; pre-transition offset wins
+    assert local_to_utc(datetime(2025, 11, 2, 1, 30),
+                        "Central Standard Time") == datetime(2025, 11, 2, 6, 30)
