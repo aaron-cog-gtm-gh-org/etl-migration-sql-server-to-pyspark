@@ -1,0 +1,24 @@
+.venv/bin/python -m pytest tests -q
+........................................                                 [100%]
+40 passed in 24.17s
+== ci: run line_downtime_daily (ns=ci) ==
+2026-10-06 18:27:29,295 INFO mfg_lake.jobs.line_downtime_daily: stage 1 stg.downtime_local: 450 of 455 events (start_utc < 2025-11-17 00:00:00, line/plant matched); 1 open event(s) capped at AsOfUtc
+2026-10-06 18:27:29,967 INFO mfg_lake.jobs.line_downtime_daily: stage 2 stg.downtime_shift_seg: 520 segment(s) from 448 shift-calendar rows; 0 event(s) overlap no shift
+2026-10-06 18:27:30,090 INFO mfg_lake.jobs.line_downtime_daily: dropped 0 segments on dim.downtime_reason inner join
+2026-10-06 18:27:31,011 INFO mfg_lake.jobs.line_downtime_daily: stage 3 line_downtime_daily: wrote 515 row(s) -> out/ci/curated/manufacturing/line_downtime_daily
+== ci: reconcile line_downtime_daily (ns=ci) ==
+PASS  row_count                         lake=515 legacy=515
+PASS  key_set                           missing=0 extra=0
+PASS  col[plant_id].mismatches          n=0
+PASS  col[line_id].mismatches           n=0
+PASS  col[production_day].mismatches    n=0
+PASS  col[shift_code].mismatches        n=0
+PASS  col[reason_category].mismatches   n=0
+PASS  col[planned_flag].checksum        lake=2.0000 legacy=2.0000
+PASS  col[planned_flag].mismatches      n=0
+PASS  col[event_count].checksum         lake=520.0000 legacy=520.0000
+PASS  col[event_count].mismatches       n=0
+PASS  col[downtime_minutes].checksum    lake=35869.0000 legacy=35869.0000
+PASS  col[downtime_minutes].mismatches  n=0
+PASS: line_downtime_daily ns=ci (13/13 controls) -> out/ci/reconciliation/line_downtime_daily.md
+CI OK

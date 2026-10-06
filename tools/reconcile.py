@@ -19,6 +19,7 @@ import math
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -52,6 +53,8 @@ def _norm(v):
     """Normalize a cell to a canonical string for equality checks."""
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return ""
+    if isinstance(v, (bool, np.bool_)):
+        return "1" if v else "0"  # BIT exports as 0/1 (bcp -c)
     if isinstance(v, pd.Timestamp):
         return v.strftime("%Y-%m-%d %H:%M:%S") if (v.hour or v.minute or v.second) \
             else v.strftime("%Y-%m-%d")
