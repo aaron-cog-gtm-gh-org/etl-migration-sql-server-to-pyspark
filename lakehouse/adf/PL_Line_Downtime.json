@@ -1,0 +1,21 @@
+{
+  "name": "PL_Line_Downtime",
+  "properties": {
+    "description": "Converted: downtime daily rollup now runs as a Spark job (mfg_lake.jobs.line_downtime_daily) writing curated parquet.",
+    "parameters": { "AsOfUtc": { "type": "string" }, "Namespace": { "type": "string", "defaultValue": "prod" } },
+    "activities": [
+      {
+        "name": "SPK_LineDowntimeDaily",
+        "type": "DatabricksSparkPython",
+        "typeProperties": {
+          "pythonFile": "dbfs:/jobs/mfg_lake/jobs/line_downtime_daily.py",
+          "parameters": ["--ns", "@pipeline().parameters.Namespace",
+                         "--as-of-utc", "@pipeline().parameters.AsOfUtc"],
+          "libraries": [{ "pypi": { "package": "pyspark==3.5.3" } }]
+        },
+        "linkedServiceName": { "referenceName": "LS_Databricks_Mfg", "type": "LinkedServiceReference" },
+        "policy": { "timeout": "0.12:00:00", "retry": 2, "retryIntervalInSeconds": 60 }
+      }
+    ]
+  }
+}
