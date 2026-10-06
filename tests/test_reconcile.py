@@ -88,3 +88,39 @@ def test_boolean_bit_column_matches_0_1(tmp_path, monkeypatch):
     pd.DataFrame({"k": ["a", "a"], "flag": [False, False], "n": [1, 2]}).to_parquet(
         d / "part-0.parquet")
     assert not reconcile.reconcile("b", "ns1", cfg)
+
+
+def test_decimal_column_and_date_key_match_snapshot_strings(tmp_path, monkeypatch):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from datetime import date
+    from decimal import Decimal
+
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    (snap / "rpt.decimal.csv").write_text(
+        "production_day,yield_pct\n2025-10-23,98.20\n2025-10-24,\n")
+    cfg = {"reports": {"decimal": {
+        "table": "rpt.decimal", "keys": ["production_day"]}}}
+    monkeypatch.setattr(reconcile, "load_snapshot",
+                        lambda table: pd.read_csv(snap / f"{table}.csv",
+                                                  dtype=str, keep_default_na=False))
+    monkeypatch.setattr(reconcile, "reconciliation_dir",
+                        lambda ns: tmp_path / ns / "reconciliation")
+    monkeypatch.setattr(reconcile, "curated_dir",
+                        lambda report, ns: tmp_path / ns / "curated" / report)
+    d = tmp_path / "ns1" / "curated" / "decimal"
+    d.mkdir(parents=True)
+
+    def write(values):
+        table = pa.table({
+            "production_day": pa.array(
+                [date(2025, 10, 23), date(2025, 10, 24)], type=pa.date32()),
+            "yield_pct": pa.array(values, type=pa.decimal128(9, 2)),
+        })
+        pq.write_table(table, d / "part-0.parquet")
+
+    write([Decimal("98.20"), None])
+    assert reconcile.reconcile("decimal", "ns1", cfg)
+    write([Decimal("98.21"), None])
+    assert not reconcile.reconcile("decimal", "ns1", cfg)

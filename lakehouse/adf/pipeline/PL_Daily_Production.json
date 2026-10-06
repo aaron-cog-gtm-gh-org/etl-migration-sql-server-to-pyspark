@@ -1,0 +1,29 @@
+{
+  "name": "PL_Daily_Production",
+  "properties": {
+    "description": "Converted: production bucket localization and daily rollup run as one PySpark job (mfg_lake.jobs.daily_production), full-overwriting curated/manufacturing/daily_production. Replaces SP_StgProductionCounts -> SP_RptDailyProduction -> COPY_rpt_daily_production_to_curated.",
+    "parameters": {
+      "AsOfUtc":   { "type": "string" },
+      "Namespace": { "type": "string", "defaultValue": "prod" }
+    },
+    "activities": [
+      {
+        "name": "SPK_DailyProduction",
+        "description": "Stages production buckets and rolls up the daily report. Full overwrite, so ADF retries are idempotent.",
+        "type": "DatabricksSparkPython",
+        "typeProperties": {
+          "pythonFile": "dbfs:/mfg_lake/jobs/daily_production.py",
+          "parameters": [
+            "--ns",         "@pipeline().parameters.Namespace",
+            "--as-of-utc",  "@pipeline().parameters.AsOfUtc"
+          ],
+          "libraries": [
+            { "whl": "dbfs:/mfg_lake/dist/mfg_lake-0.1.0-py3-none-any.whl" }
+          ]
+        },
+        "linkedServiceName": { "referenceName": "LS_Databricks_MfgLake", "type": "LinkedServiceReference" },
+        "policy": { "timeout": "0.12:00:00", "retry": 0, "retryIntervalInSeconds": 30 }
+      }
+    ]
+  }
+}

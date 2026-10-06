@@ -15,16 +15,20 @@ Mapping / semantics: docs/migration/line_downtime_daily.md
 """
 import argparse
 import logging
-import re
-from datetime import datetime, timedelta, timezone
 
 from pyspark.sql import Column, DataFrame, SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql import types as T
 
 from mfg_lake.common.io import read_raw, write_curated
 from mfg_lake.common.spark import get_spark
-from mfg_lake.common.tz import require_mapped, windows_to_iana_col
+from mfg_lake.common.shift_calendar import build_shift_calendar, plants_with_iana
+from mfg_lake.common.timeconv import (
+    _AS_OF_RE,
+    datediff_minute,
+    parse_as_of_utc,
+    to_local,
+    ts_seconds,
+)
 
 REPORT = "line_downtime_daily"
 SOURCES = ["mes.downtime_event", "dim.line", "dim.plant", "dim.shift_pattern",
@@ -35,72 +39,8 @@ OUTPUT_COLUMNS = GRAIN + ["event_count", "downtime_minutes"]
 
 log = logging.getLogger("mfg_lake.jobs.line_downtime_daily")
 
-_AS_OF_RE = re.compile(
-    r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d+))?\s*(Z|[+-]\d{2}:?\d{2})?$")
-
-
-def parse_as_of_utc(value: str) -> str:
-    """Normalise --as-of-utc to 'YYYY-MM-DD HH:MM:SS' (UTC, whole seconds).
-
-    Accepts the Makefile form ('2025-11-17 00:00:00') and the ADF
-    @trigger().scheduledTime form ('2025-11-17T06:30:00.0000000Z'). Fractional
-    seconds round half-up, as SQL Server does converting a string to the
-    proc's DATETIME2(0) @AsOfUtc parameter.
-    """
-    m = _AS_OF_RE.match(value.strip())
-    if not m:
-        raise ValueError(f"unparseable --as-of-utc {value!r}")
-    day, hms, frac, off = m.groups()
-    dt = datetime.strptime(f"{day} {hms}", "%Y-%m-%d %H:%M:%S")
-    if frac and int(frac[0]) >= 5:
-        dt += timedelta(seconds=1)
-    if off and off != "Z":
-        sign = 1 if off[0] == "+" else -1
-        hh, mm = int(off[1:3]), int(off[-2:])
-        dt = dt.replace(tzinfo=timezone(sign * timedelta(hours=hh, minutes=mm)))
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _ts(col) -> Column:
-    """Timestamp truncated to whole seconds (DATETIME2(0))."""
-    c = F.col(col) if isinstance(col, str) else col
-    return F.date_trunc("second", c.cast("timestamp"))
-
-
-def _to_local(utc_col, iana_col) -> Column:
-    """CAST(x AT TIME ZONE 'UTC' AT TIME ZONE tz AS DATETIME2(0))."""
-    return F.date_trunc("second", F.from_utc_timestamp(utc_col, iana_col))
-
-
-def datediff_minute(start, end) -> Column:
-    """T-SQL DATEDIFF(MINUTE, start, end): minute boundaries crossed.
-
-    floor(epoch(end)/60) - floor(epoch(start)/60) -- NOT elapsed seconds / 60.
-    Operates on wall-clock values; relies on spark.sql.session.timeZone=UTC.
-    """
-    s = F.col(start) if isinstance(start, str) else start
-    e = F.col(end) if isinstance(end, str) else end
-    return (F.floor(F.unix_timestamp(e) / 60)
-            - F.floor(F.unix_timestamp(s) / 60)).cast("int")
-
-
-def _time_of_day_seconds(df: DataFrame, col: str) -> Column:
-    """TIME column -> seconds since midnight. CSV inferSchema reads 'HH:MM'
-    as a timestamp on today's date; tests may pass plain strings."""
-    if isinstance(df.schema[col].dataType, T.TimestampType):
-        c = F.col(col)
-        return F.hour(c) * 3600 + F.minute(c) * 60 + F.second(c)
-    parts = F.split(F.col(col).cast("string"), ":")
-    return (parts.getItem(0).cast("int") * 3600 + parts.getItem(1).cast("int") * 60
-            + F.coalesce(parts.getItem(2).cast("int"), F.lit(0)))
-
-
-def plants_with_iana(plant: DataFrame) -> DataFrame:
-    """dim.plant with trimmed CHAR(5) plant_id and IANA tz; fails on unmapped tz."""
-    require_mapped(r.tz_name for r in plant.select("tz_name").distinct().collect())
-    return plant.select(F.trim("plant_id").alias("plant_id"),
-                        windows_to_iana_col(F.col("tz_name")).alias("iana"))
+_ts = ts_seconds
+_to_local = to_local
 
 
 # ------------------------------------------------------------------ stage 1
@@ -125,32 +65,6 @@ def stage_downtime_local(event: DataFrame, line: DataFrame, plants: DataFrame,
              .select("event_id", "plant_id", "line_id", "reason_code", "planned_flag",
                      "start_utc", "end_utc", "start_local", "end_local", "iana",
                      F.col("end_utc_raw").isNull().alias("capped_at_as_of")))
-
-
-# ------------------------------------------------------------------ stage 2
-def build_shift_calendar(plants: DataFrame, shift_pattern: DataFrame,
-                         calendar: DataFrame) -> DataFrame:
-    """dim.usp_refresh_shift_calendar -> dim.shift_calendar (UTC bounds).
-
-    Local wall-clock bounds -> UTC via to_utc_timestamp (java.time: ambiguous
-    fall-back times take the pre-transition offset, gap times shift forward),
-    matching SQL Server AT TIME ZONE.
-    """
-    sp = shift_pattern.select(
-        F.trim("plant_id").alias("plant_id"),
-        F.trim("shift_code").alias("shift_code"),
-        _time_of_day_seconds(shift_pattern, "local_start").alias("start_sec"),
-        _time_of_day_seconds(shift_pattern, "local_end").alias("end_sec"),
-        F.col("end_next_day").cast("int").alias("end_next_day"))
-    cal = calendar.select(F.to_date("calendar_date").alias("production_day"))
-    day_epoch = F.unix_timestamp(F.col("production_day").cast("timestamp"))
-    start_local = F.timestamp_seconds(day_epoch + F.col("start_sec"))
-    end_local = F.timestamp_seconds(day_epoch + F.col("end_next_day") * 86400
-                                    + F.col("end_sec"))
-    return (plants.join(sp, "plant_id").crossJoin(cal)
-            .select("plant_id", "shift_code", "production_day",
-                    _ts(F.to_utc_timestamp(start_local, F.col("iana"))).alias("start_utc"),
-                    _ts(F.to_utc_timestamp(end_local, F.col("iana"))).alias("end_utc")))
 
 
 def split_by_shift(local: DataFrame, shift_calendar: DataFrame) -> DataFrame:

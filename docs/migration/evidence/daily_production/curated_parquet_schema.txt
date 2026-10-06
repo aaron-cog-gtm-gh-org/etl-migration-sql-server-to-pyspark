@@ -1,0 +1,8 @@
+plant_id: string
+line_id: string
+production_day: date32[day]
+sku_id: string
+total_units: int32
+good_units: int32
+cases: int32
+yield_pct: decimal128(9, 2)
