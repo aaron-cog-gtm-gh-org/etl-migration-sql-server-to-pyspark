@@ -1,0 +1,35 @@
+.venv/bin/python -m mfg_lake.jobs.scrap_yield_weekly --ns dev --as-of-utc "2025-11-17 00:00:00"
+26/10/06 23:55:38 WARN Utils: Your hostname, devin-box resolves to a loopback address: 127.0.0.1; using 172.16.255.2 instead (on interface ens5)
+26/10/06 23:55:38 WARN Utils: Set SPARK_LOCAL_IP if you need to bind to another address
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/10/06 23:55:39 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2026-10-06 23:55:44,347 INFO mfg_lake.jobs.scrap_yield_weekly: legacy scrap-yield procs do not read AsOfUtc; no cutoff filter is applied
+2026-10-06 23:55:45,492 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.line inner join
+2026-10-06 23:55:45,900 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.plant inner join
+2026-10-06 23:55:46,421 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.shift_calendar inner join
+2026-10-06 23:55:48,024 INFO mfg_lake.jobs.scrap_yield_weekly: stage stg.production_local: 61336 staged bucket(s) of 61336 source bucket(s)
+2026-10-06 23:55:49,050 INFO mfg_lake.jobs.scrap_yield_weekly: 446 scrap event(s) with no overlapping order -> UNALLOCATED; sample scrap_ids=[400001, 400002, 400003, 400007, 400008]
+2026-10-06 23:55:49,825 INFO mfg_lake.jobs.scrap_yield_weekly: stage stg.scrap_alloc: 738 row(s) for 684 scrap event(s) (292 allocated to orders, 446 UNALLOCATED); not read by rpt.usp_rpt_scrap_yield_weekly, not written
+2026-10-06 23:55:50,317 INFO mfg_lake.jobs.scrap_yield_weekly: dropped 0 scrap event(s) at dim.line inner join
+2026-10-06 23:55:50,386 INFO mfg_lake.jobs.scrap_yield_weekly: stage scrap_event: 684 joined event(s) of 684 source event(s)
+2026-10-06 23:55:51,127 INFO mfg_lake.jobs.scrap_yield_weekly: dropped 0 scrap group(s) with no good row at good LEFT JOIN
+2026-10-06 23:55:52,309 INFO mfg_lake.jobs.scrap_yield_weekly: stage 2 scrap_yield_weekly: wrote 96 row(s) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/dev/curated/manufacturing/scrap_yield_weekly
+2026-10-06 23:55:52,501 INFO py4j.clientserver: Closing down clientserver connection
+.venv/bin/python tools/reconcile.py --report scrap_yield_weekly --ns dev
+PASS  row_count                    lake=96 legacy=96
+PASS  key_set                      missing=0 extra=0
+PASS  col[plant_id].mismatches     n=0
+PASS  col[line_id].mismatches      n=0
+PASS  col[iso_year].checksum       lake=194400.0000 legacy=194400.0000
+PASS  col[iso_year].mismatches     n=0
+PASS  col[iso_week].checksum       lake=4272.0000 legacy=4272.0000
+PASS  col[iso_week].mismatches     n=0
+PASS  col[good_units].checksum     lake=168959976.0000 legacy=168959976.0000
+PASS  col[good_units].mismatches   n=0
+PASS  col[scrap_units].checksum    lake=138356.0000 legacy=138356.0000
+PASS  col[scrap_units].mismatches  n=0
+PASS  col[scrap_pct].checksum      lake=8.2000 legacy=8.2000
+PASS  col[scrap_pct].mismatches    n=0
+
+PASS: scrap_yield_weekly ns=dev (14/14 controls) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/dev/reconciliation/scrap_yield_weekly.md
