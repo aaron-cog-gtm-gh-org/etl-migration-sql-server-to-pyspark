@@ -20,5 +20,5 @@ jobs:
       - name: Install
         run: make setup
       - name: CI (tests + run/reconcile converted jobs)
-        # no docker here: reconciles against committed legacy_snapshots/
+        # reconciles against committed legacy_snapshots/ prod extracts
         run: make ci

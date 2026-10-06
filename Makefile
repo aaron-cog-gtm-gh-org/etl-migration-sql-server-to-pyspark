@@ -3,7 +3,7 @@ PIP     := .venv/bin/pip
 JOBS_DIR := lakehouse/src/mfg_lake/jobs
 export PYTHONPATH := lakehouse/src
 
-.PHONY: setup seed legacy-up legacy-run legacy-down run reconcile test ci
+.PHONY: setup seed run reconcile test ci
 
 setup:
 	python3 -m venv .venv
@@ -11,15 +11,6 @@ setup:
 
 seed:
 	$(PY) tools/seed.py
-
-legacy-up:
-	docker compose up -d --wait mssql
-
-legacy-run:
-	$(PY) tools/legacy_run.py
-
-legacy-down:
-	docker compose down -v
 
 run:
 	$(PY) -m mfg_lake.jobs.$(JOB) --ns $(NS)

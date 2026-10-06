@@ -13,14 +13,17 @@ import reconcile  # noqa: E402
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """Synthetic mini-estate: one report with two key columns."""
-    snap = ROOT / "legacy_snapshots"
-    snap.mkdir(exist_ok=True)
+    snap = tmp_path / "snap"
+    snap.mkdir()
     (snap / "rpt.t.csv").write_text(
         "k1,k2,val,label\n"
         "a,1,1.50,foo\n"
         "b,2,2.25,bar\n")
     cfg = {"reports": {"t": {"table": "rpt.t", "keys": ["k1", "k2"]}},
            "numeric_tolerance": 1e-6, "sample_diffs": 10}
+    monkeypatch.setattr(reconcile, "load_snapshot",
+                        lambda table: pd.read_csv(snap / f"{table}.csv",
+                                                  dtype=str, keep_default_na=False))
     monkeypatch.setattr(reconcile, "reconciliation_dir",
                         lambda ns: tmp_path / ns / "reconciliation")
     monkeypatch.setattr(reconcile, "curated_dir",

@@ -36,7 +36,7 @@ def load_config():
 def load_snapshot(table: str) -> pd.DataFrame:
     p = ROOT / "legacy_snapshots" / f"{table}.csv"
     if not p.exists():
-        raise FileNotFoundError(f"legacy snapshot missing: {p} (run `make legacy-run`)")
+        raise FileNotFoundError(f"legacy extract missing: {p}")
     return pd.read_csv(p, dtype=str, keep_default_na=False)
 
 

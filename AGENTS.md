@@ -8,7 +8,7 @@ Environment mechanics only. Everything below runs locally.
 make setup            # creates .venv, installs python deps (pyspark, pandas, ...)
 ```
 
-Requires: python 3.10+, Java 17 (for PySpark), Docker (for legacy SQL Server).
+Requires: python 3.10+, Java 17 (for PySpark).
 
 ## Seed data
 
@@ -16,19 +16,17 @@ Requires: python 3.10+, Java 17 (for PySpark), Docker (for legacy SQL Server).
 make seed             # regenerates data/raw/*.csv deterministically
 ```
 
-## Legacy SQL Server
+`data/raw/` emulates the raw mes.*/dim.* feeds the estate consumes.
 
-```bash
-make legacy-up        # docker compose up, waits for healthy
-make legacy-run       # create schema, bulk load data/raw, run PL_Master's proc
-                      # sequence, export rpt.* tables to legacy_snapshots/
-make legacy-down      # stop the container
-```
+## Legacy estate (read-only reference)
 
-`tools/legacy_run.py` connects to the SQL Server docker-compose service,
-creates schemas/tables, bulk loads the raw CSVs, executes the same proc
-sequence the ADF `PL_Master` pipeline runs, then exports every `rpt.*`
-table to `legacy_snapshots/<table>.csv`.
+`legacy/sql/` (schemas, functions, procs) and `legacy/adf/` (pipeline,
+dataset, linkedService, trigger JSON) document what the legacy system
+does today. Treat them as reference — there is no local SQL Server to
+run them against.
+
+Expected report outputs are prod extracts in `legacy_snapshots/` (see
+`legacy_snapshots/MANIFEST.md`). Do not regenerate them.
 
 ## Lakehouse jobs
 
@@ -48,5 +46,5 @@ contract path to a local directory via `$LAKE_ROOT`.
 
 ## CI
 
-`.github/workflows/ci.yml` runs `make ci` on python 3.11 + Java 17. No
-docker in CI — reconciles against committed `legacy_snapshots/`.
+`.github/workflows/ci.yml` runs `make ci` on python 3.11 + Java 17 —
+reconciles against the committed `legacy_snapshots/` extracts.

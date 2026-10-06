@@ -158,6 +158,9 @@ def main():
                 # occasionally an explicit zero-total feed row (total=0)
                 if rng.random() < 0.006:
                     total = 0
+                # a whole dead day on one line -> zero-total report group
+                if lid == "PLT06-L4" and d == DAYS_LIST[15]:
+                    total = 0
                 good = total - (rng.randint(0, 3) if total else 0)
                 pc_rows.append((lid, fmt(su), fmt(eu), sku_id, total, good))
     write_csv("mes.production_count.csv",
@@ -258,6 +261,15 @@ def main():
             po_rows.append((f"ORD-{oid}", lid, pid, sku_id,
                             fmt(to_utc(iana, ls)), fmt(to_utc(iana, le)),
                             rng.randint(8000, 40000)))
+            # a second order overlapping the first on some days, so scrap
+            # events during the overlap have multiple candidate orders
+            if rng.random() < 0.55:
+                oid += 1
+                ls2 = ls + timedelta(hours=5)
+                le2 = ls2 + timedelta(hours=7)
+                po_rows.append((f"ORD-{oid}", lid, pid, sku_id,
+                                fmt(to_utc(iana, ls2)), fmt(to_utc(iana, le2)),
+                                rng.randint(8000, 40000)))
     write_csv("mes.production_order.csv",
               ["order_id", "line_id", "plant_id", "sku_id",
                "sched_start_utc", "sched_end_utc", "planned_qty"], po_rows)
