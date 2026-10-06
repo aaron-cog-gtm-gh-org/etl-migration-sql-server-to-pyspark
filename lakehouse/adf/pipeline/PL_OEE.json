@@ -1,0 +1,29 @@
+{
+  "name": "PL_OEE",
+  "properties": {
+    "description": "Converted: planned time and OEE rollup run as one PySpark job (mfg_lake.jobs.oee_shift). Replaces SP_CalcPlannedTime -> SP_RptOeeShift -> COPY_rpt_oee_shift_to_curated; recomputes stg.downtime_shift_seg / stg.production_local via imported upstream stage functions.",
+    "parameters": {
+      "AsOfUtc":   { "type": "string" },
+      "Namespace": { "type": "string", "defaultValue": "prod" }
+    },
+    "activities": [
+      {
+        "name": "SPK_OeeShift",
+        "description": "Stages planned time and rolls up OEE by shift. Full overwrite of curated/oee_shift.",
+        "type": "DatabricksSparkPython",
+        "typeProperties": {
+          "pythonFile": "dbfs:/mfg_lake/jobs/oee_shift.py",
+          "parameters": [
+            "--ns",         "@pipeline().parameters.Namespace",
+            "--as-of-utc",  "@pipeline().parameters.AsOfUtc"
+          ],
+          "libraries": [
+            { "whl": "dbfs:/mfg_lake/dist/mfg_lake-0.1.0-py3-none-any.whl" }
+          ]
+        },
+        "linkedServiceName": { "referenceName": "LS_Databricks_MfgLake", "type": "LinkedServiceReference" },
+        "policy": { "timeout": "0.12:00:00", "retry": 0, "retryIntervalInSeconds": 30 }
+      }
+    ]
+  }
+}
