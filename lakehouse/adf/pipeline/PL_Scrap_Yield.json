@@ -1,0 +1,29 @@
+{
+  "name": "PL_Scrap_Yield",
+  "properties": {
+    "description": "Converted: weekly scrap-yield aggregation runs as one PySpark job (mfg_lake.jobs.scrap_yield_weekly), full-overwriting curated/manufacturing/scrap_yield_weekly. Replaces SP_AllocateScrapToOrders -> SP_RptScrapYieldWeekly -> COPY_rpt_scrap_yield_weekly_to_curated.",
+    "parameters": {
+      "AsOfUtc":   { "type": "string" },
+      "Namespace": { "type": "string", "defaultValue": "prod" }
+    },
+    "activities": [
+      {
+        "name": "SPK_ScrapYieldWeekly",
+        "description": "Builds the weekly scrap-yield report. Full overwrite, so ADF retries are idempotent.",
+        "type": "DatabricksSparkPython",
+        "typeProperties": {
+          "pythonFile": "dbfs:/mfg_lake/jobs/scrap_yield_weekly.py",
+          "parameters": [
+            "--ns",         "@pipeline().parameters.Namespace",
+            "--as-of-utc",  "@pipeline().parameters.AsOfUtc"
+          ],
+          "libraries": [
+            { "whl": "dbfs:/mfg_lake/dist/mfg_lake-0.1.0-py3-none-any.whl" }
+          ]
+        },
+        "linkedServiceName": { "referenceName": "LS_Databricks_MfgLake", "type": "LinkedServiceReference" },
+        "policy": { "timeout": "0.12:00:00", "retry": 0, "retryIntervalInSeconds": 30 }
+      }
+    ]
+  }
+}
