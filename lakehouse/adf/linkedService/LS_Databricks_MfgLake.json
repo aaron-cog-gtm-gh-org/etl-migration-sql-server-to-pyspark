@@ -1,0 +1,15 @@
+{
+  "name": "LS_Databricks_MfgLake",
+  "properties": {
+    "type": "AzureDatabricks",
+    "typeProperties": {
+      "domain": "https://adb-0000000000000000.0.azuredatabricks.net",
+      "authentication": "MSI",
+      "workspaceResourceId": "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Databricks/workspaces/<workspace>",
+      "newClusterVersion": "15.4.x-scala2.12",
+      "newClusterNumOfWorker": "1",
+      "newClusterNodeType": "Standard_DS3_v2",
+      "newClusterSparkConf": { "spark.sql.session.timeZone": "UTC" }
+    }
+  }
+}

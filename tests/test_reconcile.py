@@ -65,3 +65,26 @@ def test_fail_on_extra_row(env):
     cfg, tmp = env
     _write_lake(tmp, [("a", 1, 1.5, "foo"), ("b", 2, 2.25, "bar"), ("c", 3, 1, "x")])
     assert not reconcile.reconcile("t", "ns1", cfg)
+
+
+def test_boolean_bit_column_matches_0_1(tmp_path, monkeypatch):
+    """BIT exports as 0/1; boolean lake columns must reconcile (incl. as keys)."""
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    (snap / "rpt.b.csv").write_text("k,flag,n\na,0,1\na,1,2\n")
+    cfg = {"reports": {"b": {"table": "rpt.b", "keys": ["k", "flag"]}}}
+    monkeypatch.setattr(reconcile, "load_snapshot",
+                        lambda table: pd.read_csv(snap / f"{table}.csv",
+                                                  dtype=str, keep_default_na=False))
+    monkeypatch.setattr(reconcile, "reconciliation_dir",
+                        lambda ns: tmp_path / ns / "reconciliation")
+    monkeypatch.setattr(reconcile, "curated_dir",
+                        lambda report, ns: tmp_path / ns / "curated" / report)
+    d = tmp_path / "ns1" / "curated" / "b"
+    d.mkdir(parents=True)
+    pd.DataFrame({"k": ["a", "a"], "flag": [False, True], "n": [1, 2]}).to_parquet(
+        d / "part-0.parquet")
+    assert reconcile.reconcile("b", "ns1", cfg)
+    pd.DataFrame({"k": ["a", "a"], "flag": [False, False], "n": [1, 2]}).to_parquet(
+        d / "part-0.parquet")
+    assert not reconcile.reconcile("b", "ns1", cfg)

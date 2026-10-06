@@ -1,0 +1,8 @@
+plant_id: string
+line_id: string
+production_day: date32[day]
+shift_code: string
+reason_category: string
+planned_flag: bool
+event_count: int32 not null
+downtime_minutes: int32
