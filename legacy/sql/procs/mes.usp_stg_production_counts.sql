@@ -16,6 +16,7 @@ BEGIN
         sku_id           VARCHAR(10)  NOT NULL,
         production_day   DATE         NOT NULL,
         shift_code       VARCHAR(4)   NOT NULL,
+        bucket_minutes   INT          NOT NULL,
         total_units      INT          NOT NULL,
         good_units       INT          NOT NULL
     );
@@ -28,6 +29,7 @@ BEGIN
         dim.ufn_production_day(
             CAST(c.bucket_start_utc AT TIME ZONE 'UTC' AT TIME ZONE p.tz_name AS DATETIME2(0))),
         sc.shift_code,
+        DATEDIFF(MINUTE, c.bucket_start_utc, c.bucket_end_utc) AS bucket_minutes,
         c.total_units,
         c.good_units
     FROM mes.production_count c

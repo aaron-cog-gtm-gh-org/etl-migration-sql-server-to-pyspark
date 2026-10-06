@@ -6,7 +6,7 @@
       "recurrence": {
         "frequency": "Day",
         "interval": 1,
-        "startTime": "2026-01-05T06:30:00Z",
+        "startTime": "2025-01-05T06:30:00Z",
         "timeZone": "UTC",
         "schedule": { "hours": [6], "minutes": [30] }
       }

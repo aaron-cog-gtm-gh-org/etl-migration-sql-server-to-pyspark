@@ -31,10 +31,16 @@ Expected report outputs are prod extracts in `legacy_snapshots/` (see
 ## Lakehouse jobs
 
 ```bash
-make run JOB=<module> NS=<ns>          # python -m mfg_lake.jobs.<module>
+make run JOB=<module> NS=<ns>          # python -m mfg_lake.jobs.<module> \
+                                       #   --ns <ns> --as-of-utc <cutoff>
 make reconcile REPORT=<report> NS=<ns> # compare out/<ns>/curated/<report>
                                        # vs legacy_snapshots/<table>.csv
 ```
+
+Job convention: every job takes `--ns` and `--as-of-utc`. `--as-of-utc` is
+the report cutoff the legacy `AsOfUtc` proc parameter carried; `make run`
+and `make ci` pass it from `AS_OF_UTC` in the Makefile (match
+`legacy_snapshots/MANIFEST.md`).
 
 Reports are registered in `tools/reconcile_config.yaml`. `make ci` runs the
 test suite plus run+reconcile for every job present in

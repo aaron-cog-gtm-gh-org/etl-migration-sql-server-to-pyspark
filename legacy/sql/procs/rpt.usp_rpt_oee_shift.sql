@@ -4,10 +4,14 @@
 -- Depends on PL_Line_Downtime outputs (stg.downtime_shift_seg via
 -- stg.planned_time) and stg.production_local.
 -- availability  = (shift_min - unplanned_dt) / shift_min
--- performance   = total_units / (ideal_rate * run_minutes)
+-- performance   = total_units / ideal_units, where ideal_units is the
+--                 runtime-weighted ideal: SUM(sku ideal rate x bucket
+--                 minutes actually counted on that sku)
 -- quality       = good / total
 -- All rounded to 4dp, NULLIF guards on zero denominators.
--- History: 2016-06 initial; 2021-02 exclude planned dt from A.
+-- History: 2016-06 initial; 2021-02 exclude planned dt from A;
+--          2023-08 performance fix: weight ideal rate by bucket mins
+--          (was summing rate per bucket row -> perf ~0.02).
 -- =============================================================
 CREATE OR ALTER PROCEDURE rpt.usp_rpt_oee_shift
     @PipelineName VARCHAR(80) = 'PL_OEE'
@@ -24,13 +28,7 @@ BEGIN
             SELECT s.plant_id, s.line_id, s.production_day, s.shift_code,
                    SUM(s.total_units) AS total_units,
                    SUM(s.good_units)  AS good_units,
-                   SUM(s.total_units) * 1.0 AS t
-            FROM stg.production_local s
-            GROUP BY s.plant_id, s.line_id, s.production_day, s.shift_code
-        ),
-        ideal AS (
-            SELECT s.plant_id, s.line_id, s.production_day, s.shift_code,
-                   SUM(k.ideal_units_per_min) AS ideal_rate
+                   SUM(k.ideal_units_per_min * s.bucket_minutes) AS ideal_units
             FROM stg.production_local s
             JOIN dim.sku k ON k.sku_id = s.sku_id
             GROUP BY s.plant_id, s.line_id, s.production_day, s.shift_code
@@ -43,20 +41,18 @@ BEGIN
             ROUND(CAST(pt.shift_minutes - pt.unplanned_dt_min AS DECIMAL(18,4))
                   / NULLIF(pt.shift_minutes, 0), 4) AS availability,
             ROUND(CAST(pr.total_units AS DECIMAL(18,4))
-                  / NULLIF(i.ideal_rate * (pt.shift_minutes - pt.unplanned_dt_min), 0), 4) AS performance,
+                  / NULLIF(pr.ideal_units, 0), 4) AS performance,
             ROUND(CAST(pr.good_units AS DECIMAL(18,4))
                   / NULLIF(pr.total_units, 0), 4) AS quality,
             ROUND(
                 CAST(pt.shift_minutes - pt.unplanned_dt_min AS DECIMAL(18,4)) / NULLIF(pt.shift_minutes, 0)
-              * CAST(pr.total_units AS DECIMAL(18,4)) / NULLIF(i.ideal_rate * (pt.shift_minutes - pt.unplanned_dt_min), 0)
+              * CAST(pr.total_units AS DECIMAL(18,4)) / NULLIF(pr.ideal_units, 0)
               * CAST(pr.good_units AS DECIMAL(18,4)) / NULLIF(pr.total_units, 0)
             , 4) AS oee
         FROM stg.planned_time pt
         JOIN prod  pr ON pr.plant_id = pt.plant_id AND pr.line_id = pt.line_id
                      AND pr.production_day = pt.production_day AND pr.shift_code = pt.shift_code
-        JOIN ideal i  ON i.plant_id  = pt.plant_id AND i.line_id  = pt.line_id
-                     AND i.production_day = pt.production_day AND i.shift_code  = pt.shift_code
-        WHERE pt.production_day >= '2026-10-19';
+        WHERE pt.production_day >= '2025-10-20';
 
         EXEC etl.usp_log_run @RunId, @PipelineName, 'rpt.usp_rpt_oee_shift',
              @@ROWCOUNT, 'OK';

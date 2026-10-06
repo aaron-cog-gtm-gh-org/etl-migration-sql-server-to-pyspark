@@ -15,9 +15,9 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "data" / "raw"
 
-SEED = 20261019
-START = date(2026, 10, 19)
-DAYS = 28  # 2026-10-19 .. 2026-11-15, spans US DST end 2026-11-01
+SEED = 20251020
+START = date(2025, 10, 20)
+DAYS = 28  # 2025-10-20 .. 2025-11-16, spans EU DST end 2025-10-26 and US DST end 2025-11-02
 
 # plant_id -> (name, IANA tz for generating UTC feed timestamps, pattern)
 # NOTE: dim.plant stores the *Windows* tz name used by SQL Server AT TIME ZONE.
@@ -149,11 +149,11 @@ def main():
             for b in range(96):
                 lstart = local_dt(d, 6) + timedelta(minutes=15 * b)
                 lend = lstart + timedelta(minutes=15)
-                if rng.random() > 0.78:
+                if rng.random() > 0.95:
                     continue  # idle bucket, no count row
                 su = to_utc(iana, lstart)
                 eu = to_utc(iana, lend)
-                eff = rng.uniform(0.55, 0.97)
+                eff = rng.uniform(0.78, 0.99)
                 total = int(ideal * 15 * eff)
                 # occasionally an explicit zero-total feed row (total=0)
                 if rng.random() < 0.006:
@@ -161,7 +161,9 @@ def main():
                 # a whole dead day on one line -> zero-total report group
                 if lid == "PLT06-L4" and d == DAYS_LIST[15]:
                     total = 0
-                good = total - (rng.randint(0, 3) if total else 0)
+                # scrap/reject ~0.5-3% of units so shift quality lands ~0.97-0.995
+                good = total - (int(total * rng.uniform(0.005, 0.03))
+                                if total else 0)
                 pc_rows.append((lid, fmt(su), fmt(eu), sku_id, total, good))
     write_csv("mes.production_count.csv",
               ["line_id", "bucket_start_utc", "bucket_end_utc", "sku_id",
@@ -181,9 +183,9 @@ def main():
         _, win_tz, iana, pat = PLANTS[pid]
         # ambient random events, ~1 every other day
         for d in DAYS_LIST:
-            if rng.random() < 0.5:
+            if rng.random() < 0.55:
                 h = rng.uniform(6.5, 29.0)
-                dur = rng.randint(5, 140)
+                dur = rng.randint(5, 170)
                 ls = local_dt(d, 0) + timedelta(hours=h)
                 add_dt(lid, pid, to_utc(iana, ls),
                        to_utc(iana, ls + timedelta(minutes=dur)),
@@ -205,10 +207,10 @@ def main():
     # edge: events crossing the DST fall-back transition
     dst_cases = [
         # plant, transition day, local start, local end (end may be ambiguous)
-        ("PLT01", date(2026, 11, 1), (0, 30), (2, 30)),   # falls back at 02:00
-        ("PLT02", date(2026, 11, 1), (0, 45), (2, 15)),
-        ("PLT03", date(2026, 11, 1), (0, 15), (3, 5)),
-        ("PLT06", date(2026, 10, 25), (0, 30), (2, 30)),  # UK falls back 02:00
+        ("PLT01", date(2025, 11, 2), (0, 30), (2, 30)),   # falls back at 02:00
+        ("PLT02", date(2025, 11, 2), (0, 45), (2, 15)),
+        ("PLT03", date(2025, 11, 2), (0, 15), (3, 5)),
+        ("PLT06", date(2025, 10, 26), (0, 30), (2, 30)),  # UK falls back 02:00
     ]
     for pid, d, (h0, m0), (h1, m1) in dst_cases:
         _, _, iana, _ = PLANTS[pid]
@@ -332,30 +334,40 @@ def main():
     write_csv("mes.quality_hold_event.csv",
               ["event_id", "lot_id", "status", "status_ts_utc"], qh_rows)
 
-    # ---------------- mes.material_movement ----------------
-    # CHAR(18) on the SQL side; some feeds pad with trailing spaces.
+    # ---------------- mes.material_movement + dim.material_standard ----
+    # Each order has a BOM; movements issue most BOM materials (with the
+    # odd substitution), standards cover the BOM plus the occasional
+    # never-issued line. CHAR(18) on the SQL side: some feeds pad codes
+    # with trailing spaces.
+    ORDER_BOM = {r[0]: rng.sample(MATERIALS, rng.randint(3, 5)) for r in po_rows}
     mm_rows = []
+    ms_rows = []
     mid = 700000
-    order_ids = [r[0] for r in po_rows]
-    for oidv in order_ids:
-        for m in rng.sample(MATERIALS, rng.randint(2, 4)):
-            for mv in ("ISSUE", "ISSUE", "RETURN"):
-                mid += 1
-                pad = " " * rng.randint(0, 4) if rng.random() < 0.4 else ""
-                mm_rows.append((mid, oidv, (m + pad)[:18],
-                                mv, round(rng.uniform(50, 900), 2),
-                                fmt(datetime(2026, 10, 19) + timedelta(
-                                    days=rng.randint(0, 27), hours=rng.randint(6, 20)))))
+    for oidv, bom in ORDER_BOM.items():
+        for m in bom:
+            if rng.random() < 0.88:  # issued
+                for mv in (("ISSUE", "ISSUE", "RETURN") if rng.random() < 0.3
+                           else ("ISSUE", "ISSUE")):
+                    mid += 1
+                    pad = " " * rng.randint(0, 4) if rng.random() < 0.4 else ""
+                    mm_rows.append((mid, oidv, (m + pad)[:18],
+                                    mv, round(rng.uniform(50, 900), 2),
+                                    fmt(datetime(2025, 10, 20) + timedelta(
+                                        days=rng.randint(0, 27),
+                                        hours=rng.randint(6, 20)))))
+            ms_rows.append((oidv, m, round(rng.uniform(0.5, 5.0), 3)))
+        # occasional substitution: issued but not on the BOM
+        if rng.random() < 0.08:
+            sub = rng.choice([m for m in MATERIALS if m not in bom])
+            mid += 1
+            mm_rows.append((mid, oidv, sub, "ISSUE",
+                            round(rng.uniform(50, 400), 2),
+                            fmt(datetime(2025, 10, 20) + timedelta(
+                                days=rng.randint(0, 27),
+                                hours=rng.randint(6, 20)))))
     write_csv("mes.material_movement.csv",
               ["movement_id", "order_id", "material_code", "movement_type",
                "quantity", "ts_utc"], mm_rows)
-
-    # ---------------- dim.material_standard ----------------
-    # standard qty per case per order material
-    ms_rows = []
-    for oidv, lid, pid, sku_id, *_ in po_rows:
-        for m in rng.sample(MATERIALS, 3):
-            ms_rows.append((oidv, m, round(rng.uniform(0.5, 5.0), 3)))
     write_csv("dim.material_standard.csv",
               ["order_id", "material_code", "std_qty_per_unit"], ms_rows)
 
