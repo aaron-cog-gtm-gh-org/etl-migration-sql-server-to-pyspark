@@ -1,0 +1,85 @@
+=== A: earlier --as-of-utc cutoff, NS=adv_asof ===
+.venv/bin/python -m mfg_lake.jobs.daily_production --ns adv_asof --as-of-utc "2025-11-10 00:00:00"
+26/10/06 23:19:25 WARN Utils: Your hostname, devin-box resolves to a loopback address: 127.0.0.1; using 172.16.255.2 instead (on interface ens5)
+26/10/06 23:19:25 WARN Utils: Set SPARK_LOCAL_IP if you need to bind to another address
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/10/06 23:19:25 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2026-10-06 23:19:29,191 INFO mfg_lake.jobs.daily_production: legacy production procs do not read AsOfUtc; no cutoff filter is applied
+2026-10-06 23:19:30,326 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.line inner join
+2026-10-06 23:19:30,650 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.plant inner join
+2026-10-06 23:19:31,068 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.shift_calendar inner join
+2026-10-06 23:19:32,224 INFO mfg_lake.jobs.daily_production: stage 1 stg.production_local: 61336 staged bucket(s) of 61336 source bucket(s)
+2026-10-06 23:19:32,375 INFO mfg_lake.jobs.daily_production: dropped 0 stage row(s) at dim.sku inner join
+2026-10-06 23:19:33,525 INFO mfg_lake.jobs.daily_production: stage 2 daily_production: wrote 672 row(s) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/adv_asof/curated/manufacturing/daily_production
+2026-10-06 23:19:34,049 INFO py4j.clientserver: Closing down clientserver connection
+.venv/bin/python tools/reconcile.py --report daily_production --ns adv_asof
+PASS  row_count                       lake=672 legacy=672
+PASS  key_set                         missing=0 extra=0
+PASS  col[plant_id].mismatches        n=0
+PASS  col[line_id].mismatches         n=0
+PASS  col[production_day].mismatches  n=0
+PASS  col[sku_id].mismatches          n=0
+PASS  col[total_units].checksum       lake=171942461.0000 legacy=171942461.0000
+PASS  col[total_units].mismatches     n=0
+PASS  col[good_units].checksum        lake=168959976.0000 legacy=168959976.0000
+PASS  col[good_units].mismatches      n=0
+PASS  col[cases].checksum             lake=7450002.0000 legacy=7450002.0000
+PASS  col[cases].mismatches           n=0
+PASS  col[yield_pct].mismatches       n=0
+
+PASS: daily_production ns=adv_asof (13/13 controls) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/adv_asof/reconciliation/daily_production.md
+=== B: canonical overwrite determinism, NS=adv_r1 and adv_r2 ===
+.venv/bin/python -m mfg_lake.jobs.daily_production --ns adv_r1 --as-of-utc "2025-11-17 00:00:00"
+26/10/06 23:19:42 WARN Utils: Your hostname, devin-box resolves to a loopback address: 127.0.0.1; using 172.16.255.2 instead (on interface ens5)
+26/10/06 23:19:42 WARN Utils: Set SPARK_LOCAL_IP if you need to bind to another address
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/10/06 23:19:43 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2026-10-06 23:19:46,565 INFO mfg_lake.jobs.daily_production: legacy production procs do not read AsOfUtc; no cutoff filter is applied
+2026-10-06 23:19:47,600 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.line inner join
+2026-10-06 23:19:47,845 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.plant inner join
+2026-10-06 23:19:48,231 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.shift_calendar inner join
+2026-10-06 23:19:49,394 INFO mfg_lake.jobs.daily_production: stage 1 stg.production_local: 61336 staged bucket(s) of 61336 source bucket(s)
+2026-10-06 23:19:49,544 INFO mfg_lake.jobs.daily_production: dropped 0 stage row(s) at dim.sku inner join
+2026-10-06 23:19:50,701 INFO mfg_lake.jobs.daily_production: stage 2 daily_production: wrote 672 row(s) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/adv_r1/curated/manufacturing/daily_production
+2026-10-06 23:19:51,057 INFO py4j.clientserver: Closing down clientserver connection
+.venv/bin/python -m mfg_lake.jobs.daily_production --ns adv_r2 --as-of-utc "2025-11-17 00:00:00"
+26/10/06 23:19:51 WARN Utils: Your hostname, devin-box resolves to a loopback address: 127.0.0.1; using 172.16.255.2 instead (on interface ens5)
+26/10/06 23:19:51 WARN Utils: Set SPARK_LOCAL_IP if you need to bind to another address
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/10/06 23:19:52 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2026-10-06 23:19:55,689 INFO mfg_lake.jobs.daily_production: legacy production procs do not read AsOfUtc; no cutoff filter is applied
+2026-10-06 23:19:56,767 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.line inner join
+2026-10-06 23:19:57,025 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.plant inner join
+2026-10-06 23:19:57,423 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.shift_calendar inner join
+2026-10-06 23:19:58,548 INFO mfg_lake.jobs.daily_production: stage 1 stg.production_local: 61336 staged bucket(s) of 61336 source bucket(s)
+2026-10-06 23:19:58,708 INFO mfg_lake.jobs.daily_production: dropped 0 stage row(s) at dim.sku inner join
+2026-10-06 23:19:59,922 INFO mfg_lake.jobs.daily_production: stage 2 daily_production: wrote 672 row(s) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/adv_r2/curated/manufacturing/daily_production
+2026-10-06 23:20:00,170 INFO py4j.clientserver: Closing down clientserver connection
+adv_r1 sha256=93bdc9425b7d2b2f3100fce1027f7ae06f525c495511f9e2173fb5ffe989b677 bytes=40687
+adv_r2 sha256=93bdc9425b7d2b2f3100fce1027f7ae06f525c495511f9e2173fb5ffe989b677 bytes=40687
+CSV byte-identical=True
+=== C: one-value good_units corruption, NS=adv_corrupt ===
+copied 1 parquet file; preserved schema: True
+changed exactly one good_units value: 238578 -> 238579
+.venv/bin/python tools/reconcile.py --report daily_production --ns adv_corrupt
+PASS  row_count                       lake=672 legacy=672
+PASS  key_set                         missing=0 extra=0
+PASS  col[plant_id].mismatches        n=0
+PASS  col[line_id].mismatches         n=0
+PASS  col[production_day].mismatches  n=0
+PASS  col[sku_id].mismatches          n=0
+PASS  col[total_units].checksum       lake=171942461.0000 legacy=171942461.0000
+PASS  col[total_units].mismatches     n=0
+FAIL  col[good_units].checksum        lake=168959977.0000 legacy=168959976.0000
+FAIL  col[good_units].mismatches      n=1
+PASS  col[cases].checksum             lake=7450002.0000 legacy=7450002.0000
+PASS  col[cases].mismatches           n=0
+PASS  col[yield_pct].mismatches       n=0
+  diff: key=PLT01|PLT01-L1|2025-10-20|SKU-TT18 col=good_units: lake='238579' legacy='238578'
+
+FAIL: daily_production ns=adv_corrupt (11/13 controls) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/adv_corrupt/reconciliation/daily_production.md
+make: *** [Makefile:22: reconcile] Error 1
+Expected reconcile failure captured (make exit=2)
