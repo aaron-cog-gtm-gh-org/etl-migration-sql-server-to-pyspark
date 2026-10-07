@@ -1,0 +1,2314 @@
+{
+  "tool": "tools/fuzz_line_downtime_daily.py",
+  "report_meta": {
+    "ticket": "KAN-8",
+    "pipeline": "PL_Line_Downtime",
+    "fuzz_input": "mes.downtime_event",
+    "bcp_note": "ORDER BY key, NULL = empty, BIT as 1/0",
+    "oracle_note_html": "<code>oracle_values</code> / <code>key_set_vs_oracle</code> compare every output row, and <code>stage_segments_vs_oracle</code> every <code>stg.downtime_shift_seg</code> row, against an independent pure-Python implementation of the three legacy procs (zoneinfo, local-time overlap join, minute-boundary DATEDIFF).",
+    "as_of_header": "as_of_utc (applied)",
+    "earlier_cutoff_label": "earlier cutoff {as_of_utc} must change output and FAIL reconcile",
+    "earlier_cutoff_detail": "changed={changed_vs_canonical}, reconcile exit {reconcile_exit_code}; KAN-8 AC4 met",
+    "parity_notes_html": [
+      "<b>AsOfUtc (KAN-8 AC4 met).</b> Applied exactly where legacy applies it, in <code>mes.usp_stg_downtime_local</code>: <code>start_utc &lt; @AsOfUtc</code> drops events that start at or after the cutoff, and <code>ISNULL(end_utc, @AsOfUtc)</code> caps open events only. Closed events that end after the cutoff keep their real end. An earlier cutoff changes the report and reconcile fails.",
+      "<b>DATEDIFF(MINUTE) runs on local wall-clock values</b>, as in <code>rpt.usp_rpt_line_downtime_daily</code>. A 9h fall-back night shift reports 480 minutes, not 540. A 7h spring-forward night shift also reports 480, not 420. An event that lies entirely inside the repeated fall-back hour (for example 01:50 CDT to 01:10 CST) still joins the night shift and reports <b>negative</b> minutes. This is a legacy bug, kept for parity and not fixed without approval.",
+      "<b>Shift split.</b> Every event is split across each shift it overlaps on local bounds, with strict <code>&lt;</code> / <code>&gt;</code>, so a zero-length event on a shift edge gets no segment. <code>production_day</code> comes from the shift calendar (the date the shift starts), so 03:00 local belongs to the previous day's night shift.",
+      "<b>No seed tuning.</b> A pure-Python oracle of the procs reproduces the extract byte-for-byte from the existing seed: 450 staged events, 520 segments, 515 rows. Edge cases such as shift-edge straddles, both DST directions, open events, duplicates, unknown keys and NULLs are covered by the unit tests and the fuzz variants.",
+      "<b>Line terminator.</b> MANIFEST shows <code>bcp -r\\n</code>, but the committed extract uses CRLF. The byte-compare renders CRLF.",
+      "<b>NULLs in NOT NULL columns</b> of <code>mes.downtime_event</code> cannot occur in legacy. Such rows are dropped and counted rather than failing the load. <b>INT overflow</b> raises, like SQL Server's arithmetic overflow. A <b>duplicate event_id</b> (a PK violation, also impossible in legacy) is counted once by <code>COUNT(DISTINCT)</code>, but its minutes are summed twice, as SQL would do.",
+      "<b>Ambiguous / gap local times</b> follow java.time / zoneinfo fold=0, the documented AT TIME ZONE behaviour. This was not verified against a live SQL Server. The shift calendar is reused from <code>daily_production.build_shift_calendar</code> (PR #5).",
+      "The ADF JSON in <code>lakehouse/adf/</code> was reviewed, not deployed. Nothing here ran on ADF or Databricks."
+    ]
+  },
+  "environment": {
+    "python": "3.10.12",
+    "pyspark": "3.5.3",
+    "spark": "3.5.3",
+    "java": "17.0.19",
+    "jvm_tzdb": "2026a",
+    "pandas": "2.3.3",
+    "platform": "Linux-6.8.0-1061-aws-x86_64-with-glibc2.35",
+    "spark_session_tz": "UTC",
+    "as_of_utc": "2025-11-17 00:00:00",
+    "fuzz_seed": 20251117,
+    "variants": 25,
+    "seed_py_SEED": 20251020,
+    "git_commit": "6bfab0c6860de88ec0fef8bdfad4e15e9525c187",
+    "started_utc": "2026-10-07 03:04:40"
+  },
+  "canonical": {
+    "reconcile": {
+      "pass": true,
+      "exit_code": 0,
+      "output": "PASS  row_count                         lake=515 legacy=515\nPASS  key_set                           missing=0 extra=0\nPASS  col[plant_id].mismatches          n=0\nPASS  col[line_id].mismatches           n=0\nPASS  col[production_day].mismatches    n=0\nPASS  col[shift_code].mismatches        n=0\nPASS  col[reason_category].mismatches   n=0\nPASS  col[planned_flag].checksum        lake=2.0000 legacy=2.0000\nPASS  col[planned_flag].mismatches      n=0\nPASS  col[event_count].checksum         lake=520.0000 legacy=520.0000\nPASS  col[event_count].mismatches       n=0\nPASS  col[downtime_minutes].checksum    lake=35869.0000 legacy=35869.0000\nPASS  col[downtime_minutes].mismatches  n=0\n\nPASS: line_downtime_daily ns=fuzz-20251117-canonical (13/13 controls) -> /home/ubuntu/wt-kan8/out/fuzz-20251117-canonical/reconciliation/line_downtime_daily.md\n"
+    },
+    "byte_compare": {
+      "pass": true,
+      "snapshot_sha256": "436649b90b6721c5ea1226a969072377b1d7984ffbae46bffb8b376d7623a4f8",
+      "lake_csv_sha256": "436649b90b6721c5ea1226a969072377b1d7984ffbae46bffb8b376d7623a4f8",
+      "snapshot_bytes": 24085,
+      "lake_bytes": 24085,
+      "snapshot_rows": 515,
+      "lake_rows": 515,
+      "matched_keys": 515,
+      "missing_keys": 0,
+      "extra_keys": 0,
+      "mismatched_rows": 0,
+      "line_terminator": "CRLF"
+    },
+    "schema": {
+      "schema_contract": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "unique_keys": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "no_nulls": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "event_count_positive": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "no_unknown_lines": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "no_unknown_reason_categories": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "shift_code_valid_for_plant": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "production_day_in_calendar": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "negative_minutes_only_on_fall_back": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "key_set_vs_oracle": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "oracle_values": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "_inputs": {
+        "rows": 455,
+        "null_rows": 0,
+        "open_events": 2,
+        "output_rows": 515
+      },
+      "stage_segments_vs_oracle": {
+        "pass": true,
+        "detail": "ok (job=520 oracle=520)"
+      }
+    },
+    "rerun_deterministic": {
+      "pass": true
+    },
+    "earlier_cutoff": {
+      "as_of_utc": "2025-11-10 00:00:00",
+      "changed_vs_canonical": true,
+      "identical_to_canonical": false,
+      "reconcile_exit_code": 1,
+      "pass": true,
+      "note": "AsOfUtc is applied as in mes.usp_stg_downtime_local; KAN-8 AC4: earlier cutoff must fail reconcile"
+    },
+    "corrupted_value": {
+      "pass": true,
+      "reconcile_exit_code": 1,
+      "mutation": "row 0 downtime_minutes += 1",
+      "output_tail": "  diff: key=PLT01|PLT01-L1|2025-10-23|S1|Changeover|0 col=downtime_minutes: lake='131' legacy='130'\n\nFAIL: line_downtime_daily ns=fuzz-20251117-corrupt (11/13 controls) -> /home/ubuntu/wt-kan8/out/fuzz-20251117-corrupt/reconciliation/line_downtime_daily.md"
+    }
+  },
+  "checker_self_test": {
+    "minutes_off_by_one": {
+      "caught": true,
+      "tripped": [
+        "oracle_values"
+      ]
+    },
+    "event_count_plus_one": {
+      "caught": true,
+      "tripped": [
+        "oracle_values"
+      ]
+    },
+    "production_day_shift": {
+      "caught": true,
+      "tripped": [
+        "unique_keys",
+        "key_set_vs_oracle"
+      ]
+    },
+    "planned_flag_flip": {
+      "caught": true,
+      "tripped": [
+        "key_set_vs_oracle"
+      ]
+    },
+    "shift_code_swap": {
+      "caught": true,
+      "tripped": [
+        "unique_keys",
+        "key_set_vs_oracle"
+      ]
+    },
+    "unknown_reason_leak": {
+      "caught": true,
+      "tripped": [
+        "no_unknown_reason_categories",
+        "key_set_vs_oracle"
+      ]
+    },
+    "unknown_line_leak": {
+      "caught": true,
+      "tripped": [
+        "no_unknown_lines",
+        "key_set_vs_oracle"
+      ]
+    },
+    "duplicate_key_row": {
+      "caught": true,
+      "tripped": [
+        "unique_keys"
+      ]
+    },
+    "negative_minutes_outside_fall_back": {
+      "caught": true,
+      "tripped": [
+        "negative_minutes_only_on_fall_back",
+        "oracle_values"
+      ]
+    },
+    "event_count_int64_dtype": {
+      "caught": true,
+      "tripped": [
+        "schema_contract"
+      ]
+    }
+  },
+  "variants": [
+    {
+      "variant": 0,
+      "rng_seed": 20251117000,
+      "namespace": "fuzz-20251117-v000",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-11 07:11:58",
+      "features": {
+        "random": 106,
+        "straddle_shift_edge": 68,
+        "straddle_0600": 25,
+        "minute_boundary": 25,
+        "zero_length_inside": 25,
+        "zero_length_on_edge": 25,
+        "dst_transition": 6,
+        "dst_repeated_hour": 6,
+        "open_event": 8,
+        "ends_after_cutoff": 8,
+        "starts_at_or_after_cutoff": 13,
+        "before_window": 8,
+        "duplicate": 20,
+        "null_not_null_col": 55,
+        "unknown_reason": 8,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 407,
+        "null_rows": 57,
+        "open_events": 8,
+        "output_rows": 343
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=383 oracle=383)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.9
+    },
+    {
+      "variant": 1,
+      "rng_seed": 20251117001,
+      "namespace": "fuzz-20251117-v001",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-11 04:16:43",
+      "features": {
+        "random": 113,
+        "straddle_shift_edge": 93,
+        "straddle_0600": 33,
+        "minute_boundary": 33,
+        "zero_length_inside": 33,
+        "zero_length_on_edge": 33,
+        "dst_transition": 7,
+        "dst_repeated_hour": 7,
+        "open_event": 9,
+        "ends_after_cutoff": 9,
+        "starts_at_or_after_cutoff": 19,
+        "before_window": 9,
+        "duplicate": 27,
+        "null_not_null_col": 58,
+        "unknown_reason": 9,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 493,
+        "null_rows": 59,
+        "open_events": 10,
+        "output_rows": 367
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=415 oracle=415)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.81
+    },
+    {
+      "variant": 2,
+      "rng_seed": 20251117002,
+      "namespace": "fuzz-20251117-v002",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-11 06:57:35",
+      "features": {
+        "random": 61,
+        "straddle_shift_edge": 36,
+        "straddle_0600": 13,
+        "minute_boundary": 13,
+        "zero_length_inside": 13,
+        "zero_length_on_edge": 13,
+        "open_event": 4,
+        "ends_after_cutoff": 4,
+        "starts_at_or_after_cutoff": 10,
+        "before_window": 4,
+        "duplicate": 13,
+        "null_not_null_col": 28,
+        "unknown_reason": 4,
+        "dst_transition": 3,
+        "dst_repeated_hour": 3,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 223,
+        "null_rows": 29,
+        "open_events": 6,
+        "output_rows": 192
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=215 oracle=215)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.8
+    },
+    {
+      "variant": 3,
+      "rng_seed": 20251117003,
+      "namespace": "fuzz-20251117-v003",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2026-03-15 13:54:42",
+      "features": {
+        "random": 128,
+        "straddle_shift_edge": 79,
+        "straddle_0600": 31,
+        "minute_boundary": 31,
+        "zero_length_inside": 31,
+        "zero_length_on_edge": 31,
+        "open_event": 9,
+        "ends_after_cutoff": 9,
+        "starts_at_or_after_cutoff": 15,
+        "before_window": 9,
+        "duplicate": 22,
+        "null_not_null_col": 60,
+        "unknown_reason": 9,
+        "dst_transition": 8,
+        "dst_gap": 8,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 481,
+        "null_rows": 60,
+        "open_events": 11,
+        "output_rows": 215
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=241 oracle=241)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.74
+    },
+    {
+      "variant": 4,
+      "rng_seed": 20251117004,
+      "namespace": "fuzz-20251117-v004",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-29T20:39:48Z",
+      "features": {
+        "random": 142,
+        "straddle_shift_edge": 107,
+        "straddle_0600": 38,
+        "minute_boundary": 38,
+        "zero_length_inside": 38,
+        "zero_length_on_edge": 38,
+        "dst_transition": 5,
+        "dst_repeated_hour": 5,
+        "open_event": 9,
+        "ends_after_cutoff": 9,
+        "starts_at_or_after_cutoff": 19,
+        "before_window": 9,
+        "duplicate": 17,
+        "null_not_null_col": 57,
+        "unknown_reason": 9,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 541,
+        "null_rows": 59,
+        "open_events": 15,
+        "output_rows": 244
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=289 oracle=289)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.63
+    },
+    {
+      "variant": 5,
+      "rng_seed": 20251117005,
+      "namespace": "fuzz-20251117-v005",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-13 06:38:33",
+      "features": {
+        "random": 78,
+        "straddle_shift_edge": 33,
+        "straddle_0600": 14,
+        "minute_boundary": 14,
+        "zero_length_inside": 14,
+        "zero_length_on_edge": 14,
+        "dst_transition": 5,
+        "dst_repeated_hour": 5,
+        "open_event": 5,
+        "ends_after_cutoff": 5,
+        "starts_at_or_after_cutoff": 9,
+        "before_window": 5,
+        "duplicate": 10,
+        "null_not_null_col": 34,
+        "unknown_reason": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 251,
+        "null_rows": 34,
+        "open_events": 7,
+        "output_rows": 205
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=230 oracle=230)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.48
+    },
+    {
+      "variant": 6,
+      "rng_seed": 20251117006,
+      "namespace": "fuzz-20251117-v006",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-13 03:50:48",
+      "features": {
+        "random": 71,
+        "straddle_shift_edge": 29,
+        "straddle_0600": 11,
+        "minute_boundary": 11,
+        "zero_length_inside": 11,
+        "zero_length_on_edge": 11,
+        "open_event": 4,
+        "ends_after_cutoff": 4,
+        "starts_at_or_after_cutoff": 9,
+        "before_window": 4,
+        "duplicate": 7,
+        "null_not_null_col": 29,
+        "unknown_reason": 4,
+        "dst_transition": 3,
+        "dst_repeated_hour": 3,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 212,
+        "null_rows": 30,
+        "open_events": 5,
+        "output_rows": 202
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=220 oracle=220)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.64
+    },
+    {
+      "variant": 7,
+      "rng_seed": 20251117007,
+      "namespace": "fuzz-20251117-v007",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2026-03-15 09:50:54",
+      "features": {
+        "random": 51,
+        "straddle_shift_edge": 42,
+        "straddle_0600": 15,
+        "minute_boundary": 15,
+        "zero_length_inside": 15,
+        "zero_length_on_edge": 15,
+        "open_event": 4,
+        "ends_after_cutoff": 4,
+        "starts_at_or_after_cutoff": 6,
+        "before_window": 4,
+        "duplicate": 10,
+        "null_not_null_col": 28,
+        "unknown_reason": 4,
+        "dst_transition": 1,
+        "dst_gap": 1,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 216,
+        "null_rows": 28,
+        "open_events": 5,
+        "output_rows": 65
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=75 oracle=75)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.58
+    },
+    {
+      "variant": 8,
+      "rng_seed": 20251117008,
+      "namespace": "fuzz-20251117-v008",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-03 10:25:15",
+      "features": {
+        "random": 95,
+        "straddle_shift_edge": 53,
+        "straddle_0600": 19,
+        "minute_boundary": 19,
+        "zero_length_inside": 19,
+        "zero_length_on_edge": 19,
+        "open_event": 6,
+        "ends_after_cutoff": 6,
+        "starts_at_or_after_cutoff": 11,
+        "before_window": 6,
+        "duplicate": 17,
+        "null_not_null_col": 42,
+        "unknown_reason": 6,
+        "dst_transition": 4,
+        "dst_repeated_hour": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 327,
+        "null_rows": 43,
+        "open_events": 11,
+        "output_rows": 193
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=220 oracle=220)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.63
+    },
+    {
+      "variant": 9,
+      "rng_seed": 20251117009,
+      "namespace": "fuzz-20251117-v009",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-07T20:43:53Z",
+      "features": {
+        "random": 47,
+        "straddle_shift_edge": 39,
+        "straddle_0600": 13,
+        "minute_boundary": 13,
+        "zero_length_inside": 13,
+        "zero_length_on_edge": 13,
+        "dst_transition": 4,
+        "dst_repeated_hour": 4,
+        "open_event": 4,
+        "ends_after_cutoff": 4,
+        "starts_at_or_after_cutoff": 10,
+        "before_window": 4,
+        "duplicate": 11,
+        "null_not_null_col": 26,
+        "unknown_reason": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 210,
+        "null_rows": 26,
+        "open_events": 5,
+        "output_rows": 121
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=144 oracle=144)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.4
+    },
+    {
+      "variant": 10,
+      "rng_seed": 20251117010,
+      "namespace": "fuzz-20251117-v010",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-11 11:10:21",
+      "features": {
+        "random": 62,
+        "straddle_shift_edge": 43,
+        "straddle_0600": 16,
+        "minute_boundary": 16,
+        "zero_length_inside": 16,
+        "zero_length_on_edge": 16,
+        "open_event": 5,
+        "ends_after_cutoff": 5,
+        "starts_at_or_after_cutoff": 10,
+        "before_window": 5,
+        "duplicate": 17,
+        "null_not_null_col": 33,
+        "unknown_reason": 5,
+        "dst_transition": 4,
+        "dst_repeated_hour": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 258,
+        "null_rows": 36,
+        "open_events": 7,
+        "output_rows": 221
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=255 oracle=255)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.46
+    },
+    {
+      "variant": 11,
+      "rng_seed": 20251117011,
+      "namespace": "fuzz-20251117-v011",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2026-03-28 08:38:35",
+      "features": {
+        "random": 116,
+        "straddle_shift_edge": 78,
+        "straddle_0600": 30,
+        "minute_boundary": 30,
+        "zero_length_inside": 30,
+        "zero_length_on_edge": 30,
+        "open_event": 9,
+        "ends_after_cutoff": 9,
+        "starts_at_or_after_cutoff": 16,
+        "before_window": 9,
+        "duplicate": 21,
+        "null_not_null_col": 65,
+        "unknown_reason": 9,
+        "dst_transition": 4,
+        "dst_gap": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 461,
+        "null_rows": 67,
+        "open_events": 10,
+        "output_rows": 376
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=427 oracle=427)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.63
+    },
+    {
+      "variant": 12,
+      "rng_seed": 20251117012,
+      "namespace": "fuzz-20251117-v012",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-04 10:04:16",
+      "features": {
+        "random": 135,
+        "straddle_shift_edge": 84,
+        "straddle_0600": 32,
+        "minute_boundary": 32,
+        "zero_length_inside": 32,
+        "zero_length_on_edge": 32,
+        "open_event": 10,
+        "ends_after_cutoff": 10,
+        "starts_at_or_after_cutoff": 19,
+        "before_window": 10,
+        "duplicate": 23,
+        "null_not_null_col": 70,
+        "unknown_reason": 10,
+        "dst_transition": 8,
+        "dst_repeated_hour": 8,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 516,
+        "null_rows": 75,
+        "open_events": 10,
+        "output_rows": 320
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=359 oracle=359)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.74
+    },
+    {
+      "variant": 13,
+      "rng_seed": 20251117013,
+      "namespace": "fuzz-20251117-v013",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-26 19:08:41",
+      "features": {
+        "random": 129,
+        "straddle_shift_edge": 84,
+        "straddle_0600": 34,
+        "minute_boundary": 34,
+        "zero_length_inside": 34,
+        "zero_length_on_edge": 34,
+        "dst_transition": 6,
+        "dst_repeated_hour": 6,
+        "open_event": 10,
+        "ends_after_cutoff": 10,
+        "starts_at_or_after_cutoff": 18,
+        "before_window": 10,
+        "duplicate": 30,
+        "null_not_null_col": 71,
+        "unknown_reason": 10,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 521,
+        "null_rows": 72,
+        "open_events": 10,
+        "output_rows": 151
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=178 oracle=178)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.64
+    },
+    {
+      "variant": 14,
+      "rng_seed": 20251117014,
+      "namespace": "fuzz-20251117-v014",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-15T08:01:24Z",
+      "features": {
+        "random": 88,
+        "straddle_shift_edge": 56,
+        "straddle_0600": 20,
+        "minute_boundary": 20,
+        "zero_length_inside": 20,
+        "zero_length_on_edge": 20,
+        "open_event": 6,
+        "ends_after_cutoff": 6,
+        "starts_at_or_after_cutoff": 10,
+        "before_window": 6,
+        "duplicate": 15,
+        "null_not_null_col": 42,
+        "unknown_reason": 6,
+        "dst_transition": 3,
+        "dst_repeated_hour": 3,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 322,
+        "null_rows": 45,
+        "open_events": 6,
+        "output_rows": 316
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=357 oracle=357)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.52
+    },
+    {
+      "variant": 15,
+      "rng_seed": 20251117015,
+      "namespace": "fuzz-20251117-v015",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2026-03-25 05:03:08",
+      "features": {
+        "random": 64,
+        "straddle_shift_edge": 35,
+        "straddle_0600": 14,
+        "minute_boundary": 14,
+        "zero_length_inside": 14,
+        "zero_length_on_edge": 14,
+        "dst_transition": 4,
+        "dst_gap": 4,
+        "open_event": 4,
+        "ends_after_cutoff": 4,
+        "starts_at_or_after_cutoff": 10,
+        "before_window": 4,
+        "duplicate": 9,
+        "null_not_null_col": 28,
+        "unknown_reason": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 227,
+        "null_rows": 30,
+        "open_events": 5,
+        "output_rows": 137
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=155 oracle=155)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.59
+    },
+    {
+      "variant": 16,
+      "rng_seed": 20251117016,
+      "namespace": "fuzz-20251117-v016",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-23 04:26:43",
+      "features": {
+        "random": 82,
+        "straddle_shift_edge": 42,
+        "straddle_0600": 16,
+        "minute_boundary": 16,
+        "zero_length_inside": 16,
+        "zero_length_on_edge": 16,
+        "dst_transition": 4,
+        "dst_repeated_hour": 4,
+        "open_event": 6,
+        "ends_after_cutoff": 6,
+        "starts_at_or_after_cutoff": 13,
+        "before_window": 6,
+        "duplicate": 17,
+        "null_not_null_col": 44,
+        "unknown_reason": 6,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 295,
+        "null_rows": 45,
+        "open_events": 6,
+        "output_rows": 34
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=44 oracle=44)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.49
+    },
+    {
+      "variant": 17,
+      "rng_seed": 20251117017,
+      "namespace": "fuzz-20251117-v017",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-01 14:51:30",
+      "features": {
+        "random": 59,
+        "straddle_shift_edge": 38,
+        "straddle_0600": 14,
+        "minute_boundary": 14,
+        "zero_length_inside": 14,
+        "zero_length_on_edge": 14,
+        "open_event": 6,
+        "ends_after_cutoff": 6,
+        "starts_at_or_after_cutoff": 11,
+        "before_window": 6,
+        "duplicate": 8,
+        "null_not_null_col": 42,
+        "unknown_reason": 6,
+        "dst_transition": 4,
+        "dst_repeated_hour": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 247,
+        "null_rows": 44,
+        "open_events": 7,
+        "output_rows": 111
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=126 oracle=126)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.85
+    },
+    {
+      "variant": 18,
+      "rng_seed": 20251117018,
+      "namespace": "fuzz-20251117-v018",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-29 13:33:36",
+      "features": {
+        "random": 65,
+        "straddle_shift_edge": 53,
+        "straddle_0600": 19,
+        "minute_boundary": 19,
+        "zero_length_inside": 19,
+        "zero_length_on_edge": 19,
+        "dst_transition": 3,
+        "dst_repeated_hour": 3,
+        "open_event": 5,
+        "ends_after_cutoff": 5,
+        "starts_at_or_after_cutoff": 11,
+        "before_window": 5,
+        "duplicate": 13,
+        "null_not_null_col": 35,
+        "unknown_reason": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 280,
+        "null_rows": 40,
+        "open_events": 7,
+        "output_rows": 81
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=93 oracle=93)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.4
+    },
+    {
+      "variant": 19,
+      "rng_seed": 20251117019,
+      "namespace": "fuzz-20251117-v019",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2026-03-25T11:24:22Z",
+      "features": {
+        "random": 124,
+        "straddle_shift_edge": 99,
+        "straddle_0600": 35,
+        "minute_boundary": 35,
+        "zero_length_inside": 35,
+        "zero_length_on_edge": 35,
+        "dst_transition": 6,
+        "dst_gap": 6,
+        "open_event": 9,
+        "ends_after_cutoff": 9,
+        "starts_at_or_after_cutoff": 21,
+        "before_window": 9,
+        "duplicate": 25,
+        "null_not_null_col": 66,
+        "unknown_reason": 9,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 524,
+        "null_rows": 71,
+        "open_events": 10,
+        "output_rows": 384
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=440 oracle=440)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.54
+    },
+    {
+      "variant": 20,
+      "rng_seed": 20251117020,
+      "namespace": "fuzz-20251117-v020",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-15 20:26:06",
+      "features": {
+        "random": 78,
+        "straddle_shift_edge": 42,
+        "straddle_0600": 17,
+        "minute_boundary": 17,
+        "zero_length_inside": 17,
+        "zero_length_on_edge": 17,
+        "dst_transition": 4,
+        "dst_repeated_hour": 4,
+        "open_event": 5,
+        "ends_after_cutoff": 5,
+        "starts_at_or_after_cutoff": 8,
+        "before_window": 5,
+        "duplicate": 9,
+        "null_not_null_col": 32,
+        "unknown_reason": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 266,
+        "null_rows": 33,
+        "open_events": 7,
+        "output_rows": 272
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=301 oracle=301)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.58
+    },
+    {
+      "variant": 21,
+      "rng_seed": 20251117021,
+      "namespace": "fuzz-20251117-v021",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-31 15:59:56",
+      "features": {
+        "random": 109,
+        "straddle_shift_edge": 83,
+        "straddle_0600": 32,
+        "minute_boundary": 32,
+        "zero_length_inside": 32,
+        "zero_length_on_edge": 32,
+        "open_event": 7,
+        "ends_after_cutoff": 7,
+        "starts_at_or_after_cutoff": 12,
+        "before_window": 7,
+        "duplicate": 18,
+        "null_not_null_col": 49,
+        "unknown_reason": 7,
+        "dst_transition": 5,
+        "dst_repeated_hour": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 438,
+        "null_rows": 50,
+        "open_events": 10,
+        "output_rows": 185
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=218 oracle=218)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.48
+    },
+    {
+      "variant": 22,
+      "rng_seed": 20251117022,
+      "namespace": "fuzz-20251117-v022",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-08 09:24:31",
+      "features": {
+        "random": 56,
+        "straddle_shift_edge": 37,
+        "straddle_0600": 14,
+        "minute_boundary": 14,
+        "zero_length_inside": 14,
+        "zero_length_on_edge": 14,
+        "dst_transition": 4,
+        "dst_repeated_hour": 4,
+        "open_event": 4,
+        "ends_after_cutoff": 4,
+        "starts_at_or_after_cutoff": 9,
+        "before_window": 4,
+        "duplicate": 8,
+        "null_not_null_col": 29,
+        "unknown_reason": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 220,
+        "null_rows": 29,
+        "open_events": 4,
+        "output_rows": 151
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=168 oracle=168)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.34
+    },
+    {
+      "variant": 23,
+      "rng_seed": 20251117023,
+      "namespace": "fuzz-20251117-v023",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2026-03-24 21:18:13",
+      "features": {
+        "random": 130,
+        "straddle_shift_edge": 66,
+        "straddle_0600": 27,
+        "minute_boundary": 27,
+        "zero_length_inside": 27,
+        "zero_length_on_edge": 27,
+        "open_event": 8,
+        "ends_after_cutoff": 8,
+        "starts_at_or_after_cutoff": 13,
+        "before_window": 8,
+        "duplicate": 20,
+        "null_not_null_col": 57,
+        "unknown_reason": 8,
+        "dst_transition": 7,
+        "dst_gap": 7,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 441,
+        "null_rows": 57,
+        "open_events": 8,
+        "output_rows": 309
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=359 oracle=359)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.31
+    },
+    {
+      "variant": 24,
+      "rng_seed": 20251117024,
+      "namespace": "fuzz-20251117-v024",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-12T11:35:13Z",
+      "features": {
+        "random": 66,
+        "straddle_shift_edge": 41,
+        "straddle_0600": 15,
+        "minute_boundary": 15,
+        "zero_length_inside": 15,
+        "zero_length_on_edge": 15,
+        "open_event": 5,
+        "ends_after_cutoff": 5,
+        "starts_at_or_after_cutoff": 10,
+        "before_window": 5,
+        "duplicate": 12,
+        "null_not_null_col": 35,
+        "unknown_reason": 5,
+        "dst_transition": 3,
+        "dst_repeated_hour": 3,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 251,
+        "null_rows": 35,
+        "open_events": 10,
+        "output_rows": 227
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_nulls": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "event_count_positive": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_reason_categories": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "shift_code_valid_for_plant": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_in_calendar": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "negative_minutes_only_on_fall_back": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "key_set_vs_oracle": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "stage_segments_vs_oracle": {
+          "pass": true,
+          "detail": "ok (job=254 oracle=254)"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 2.4
+    }
+  ],
+  "summary": {
+    "variants_total": 25,
+    "variants_passed": 25,
+    "canonical_reconcile": true,
+    "canonical_byte_compare": true,
+    "rerun_deterministic": true,
+    "earlier_cutoff_fails_reconcile": true,
+    "corrupted_value_detected": true,
+    "checker_mutants_caught": "10/10",
+    "seconds": 87.4,
+    "overall_pass": true
+  }
+}
