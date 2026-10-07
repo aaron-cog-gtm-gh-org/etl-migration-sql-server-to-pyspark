@@ -1,0 +1,25 @@
+{
+  "name": "PL_OEE",
+  "properties": {
+    "description": "Converted (KAN-7): mes.usp_calc_planned_time + rpt.usp_rpt_oee_shift + the Copy to curated are replaced by one Spark job (mfg_lake.jobs.oee_shift). The job builds the shift calendar, imports KAN-6 production and KAN-8 downtime staging, and writes snappy Parquet to abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/oee_shift — the same location DS_ADLS_Curated_Parquet (report=oee_shift) resolved to; the curated parquet sink is unchanged. Legacy PL_OEE activities have no retry policy; none is added.",
+    "parameters": { "AsOfUtc": { "type": "string" } },
+    "activities": [
+      {
+        "name": "SPK_OeeShift",
+        "type": "DatabricksSparkPython",
+        "typeProperties": {
+          "pythonFile": "dbfs:/jobs/mfg_lake/jobs/oee_shift.py",
+          "parameters": ["--ns", "prod",
+                         "--as-of-utc", "@pipeline().parameters.AsOfUtc"],
+          "libraries": [{ "pypi": { "package": "pyspark==3.5.3" } }]
+        },
+        "linkedServiceName": { "referenceName": "LS_Databricks_Mfg", "type": "LinkedServiceReference" },
+        "userProperties": [
+          { "name": "sink", "value": "abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/oee_shift" },
+          { "name": "sinkFormat", "value": "parquet (snappy), overwrite" },
+          { "name": "legacyActivities", "value": "SP_CalcPlannedTime, SP_RptOeeShift, COPY_rpt_oee_shift_to_curated" }
+        ]
+      }
+    ]
+  }
+}
