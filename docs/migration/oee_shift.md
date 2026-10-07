@@ -102,14 +102,27 @@ Thus an earlier cutoff is expected to FAIL reconcile. This verified
 data-flow behavior contradicts the migration playbook table, which says
 `PL_OEE` should be IDENTICAL for earlier cutoffs.
 
-## Ticket acceptance criteria
+## Ticket acceptance criteria (KAN-7)
 
-| criterion | status | evidence / note |
+KAN-7 also lists "SQL Server behaviours the migration must preserve". One
+of them conflicts with the legacy procs:
+
+| ticket behaviour | status | reason |
 |---|---|---|
-| AC1: planned-minutes definition is shift length minus planned downtime | **not met, by design** | The proc stores `shift_minutes` directly as `planned_min`. For example, PLT02-L1 2025-10-30 S1 has 90 planned downtime minutes but snapshot `planned_min=480`, `availability=1.0000`. |
-| AC2: preserve OEE join, runtime-weighted ideal, NULL and rounding semantics | met | Explicit integer-ratio calculation and unit tests; canonical comparison is separately recorded below. |
-| AC3: produce the registered 1792-row `rpt.oee_shift` contract | pending validation | Snapshot/reconcile and CI results are recorded after the implementation run. |
-| AC4: cutoff behavior | met as legacy behavior | OEE inherits the KAN-8 downtime cutoff; an earlier cutoff changes the report and is expected to fail reconcile. This differs from the playbook's identical-output table. |
+| Planned minutes = shift length minus PLANNED downtime | **not met, by design** | `mes.usp_calc_planned_time` computes `planned_dt_min`, but `rpt.usp_rpt_oee_shift` never uses it. It writes `planned_min = shift_minutes`, and availability is `(shift_minutes - unplanned_dt_min) / shift_minutes`. The prod extract agrees: PLT02-L1 2025-10-30 S1 has 90 planned downtime minutes, and the snapshot shows `planned_min=480`, `availability=1.0000`. Exact parity wins. |
+| Runtime-weighted ideal rate | met | `SUM(ideal_units_per_min * bucket_minutes)` |
+| Each ratio DECIMAL(9,4) with `NULLIF` guards | met | exact ratio, rounded once, half away from zero; NULL on a zero denominator |
+| DST-length shifts | met | UTC `DATEDIFF` on calendar bounds (540/420 Central, 780/660 London) |
+
+| AC | status | evidence / note |
+|---|---|---|
+| 1. `mfg_lake.jobs.oee_shift` with `--ns` / `--as-of-utc`, writes curated `oee_shift` | met | `test_cli_requires_and_parses_ns_and_as_of_utc`, `make run JOB=oee_shift` |
+| 2. Tests before the job, covering the listed behaviours | met, except the planned-minutes behaviour (not met, by design; above) | tests commit precedes the job commit. `test_planned_and_unplanned_downtime_are_separate` pins the legacy behaviour. |
+| 3. `make reconcile REPORT=oee_shift` passes: 1792 rows, 0/0 keys, 0 mismatches | met | see Validation evidence |
+| 4. Earlier cutoff and a corrupted value fail reconcile; rerun is identical | met | The earlier cutoff fails only through the imported KAN-8 downtime stage (see `AsOfUtc`). It contradicts the playbook table, not the ticket. |
+| 5. `PL_OEE.json`: single Spark activity; name, `AsOfUtc` and `PL_Master` dependencies unchanged | met | `lakehouse/adf/pipeline/PL_OEE.json`. Legacy PL_OEE has no retry policy, and none is added. |
+| 6. Mapping doc with deviations and sign-off | met | this document |
+| 7. `legacy/` and `legacy_snapshots/` unchanged; PR with green CI | met locally (checksums in the recorded run); CI pending | |
 
 ## Deviations and data handling
 
