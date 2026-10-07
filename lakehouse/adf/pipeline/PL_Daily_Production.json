@@ -1,0 +1,26 @@
+{
+  "name": "PL_Daily_Production",
+  "properties": {
+    "description": "Converted (KAN-6): mes.usp_stg_production_counts + rpt.usp_rpt_daily_production + the Copy to curated are replaced by one Spark job (mfg_lake.jobs.daily_production). The job builds the shift calendar itself and writes snappy Parquet to abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/daily_production — the same location DS_ADLS_Curated_Parquet (report=daily_production) resolved to.",
+    "parameters": { "AsOfUtc": { "type": "string" } },
+    "activities": [
+      {
+        "name": "SPK_DailyProduction",
+        "type": "DatabricksSparkPython",
+        "typeProperties": {
+          "pythonFile": "dbfs:/jobs/mfg_lake/jobs/daily_production.py",
+          "parameters": ["--ns", "prod",
+                         "--as-of-utc", "@pipeline().parameters.AsOfUtc"],
+          "libraries": [{ "pypi": { "package": "pyspark==3.5.3" } }]
+        },
+        "linkedServiceName": { "referenceName": "LS_Databricks_Mfg", "type": "LinkedServiceReference" },
+        "policy": { "timeout": "0.12:00:00", "retry": 1, "retryIntervalInSeconds": 30 },
+        "userProperties": [
+          { "name": "sink", "value": "abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/daily_production" },
+          { "name": "sinkFormat", "value": "parquet (snappy), overwrite" },
+          { "name": "legacyActivities", "value": "SP_StgProductionCounts, SP_RptDailyProduction, COPY_rpt_daily_production_to_curated" }
+        ]
+      }
+    ]
+  }
+}

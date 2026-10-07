@@ -5,7 +5,8 @@ The ADF estate writes curated output to
 That abfss URI is the contract a converted job must write to. Locally it
 resolves to $LAKE_ROOT/<ns>/curated/<report> (default lake root ./out).
 
-Raw seed feeds resolve to <repo>/data/raw/<schema>.<table>.csv via raw_csv().
+Raw seed feeds resolve to <repo>/data/raw/<schema>.<table>.csv via raw_csv()
+($RAW_DIR overrides the directory, e.g. for fuzz variants).
 """
 import os
 from pathlib import Path
@@ -34,5 +35,6 @@ def reconciliation_dir(ns: str) -> Path:
 
 
 def raw_csv(schema_table: str) -> Path:
-    """<repo>/data/raw/<schema>.<table>.csv"""
-    return REPO_ROOT / "data" / "raw" / f"{schema_table}.csv"
+    """<repo>/data/raw/<schema>.<table>.csv (or $RAW_DIR/<schema>.<table>.csv)"""
+    raw_dir = Path(os.environ.get("RAW_DIR", REPO_ROOT / "data" / "raw"))
+    return raw_dir / f"{schema_table}.csv"
