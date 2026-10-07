@@ -1,0 +1,1850 @@
+{
+  "tool": "tools/fuzz_daily_production.py",
+  "environment": {
+    "python": "3.10.12",
+    "pyspark": "3.5.3",
+    "spark": "3.5.3",
+    "java": "17.0.19",
+    "jvm_tzdb": "2026a",
+    "pandas": "2.3.3",
+    "platform": "Linux-6.8.0-1061-aws-x86_64-with-glibc2.35",
+    "spark_session_tz": "UTC",
+    "as_of_utc": "2025-11-17 00:00:00",
+    "fuzz_seed": 20251117,
+    "variants": 25,
+    "seed_py_SEED": 20251020,
+    "git_commit": "2cd8484e71c6c72d217da2bdf4a911d5cdeaf6aa",
+    "started_utc": "2026-10-07 01:50:28"
+  },
+  "canonical": {
+    "reconcile": {
+      "pass": true,
+      "exit_code": 0,
+      "output": "PASS  row_count                       lake=672 legacy=672\nPASS  key_set                         missing=0 extra=0\nPASS  col[plant_id].mismatches        n=0\nPASS  col[line_id].mismatches         n=0\nPASS  col[production_day].mismatches  n=0\nPASS  col[sku_id].mismatches          n=0\nPASS  col[total_units].checksum       lake=171942461.0000 legacy=171942461.0000\nPASS  col[total_units].mismatches     n=0\nPASS  col[good_units].checksum        lake=168959976.0000 legacy=168959976.0000\nPASS  col[good_units].mismatches      n=0\nPASS  col[cases].checksum             lake=7450002.0000 legacy=7450002.0000\nPASS  col[cases].mismatches           n=0\nPASS  col[yield_pct].mismatches       n=0\n\nPASS: daily_production ns=fuzz-20251117-canonical (13/13 controls) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/fuzz-20251117-canonical/reconciliation/daily_production.md\n"
+    },
+    "byte_compare": {
+      "pass": true,
+      "snapshot_sha256": "d2d33247fb50c71a78f3e60f68976a16a797f136e7b1be7022a56b5a44b3a371",
+      "lake_csv_sha256": "d2d33247fb50c71a78f3e60f68976a16a797f136e7b1be7022a56b5a44b3a371",
+      "snapshot_bytes": 41360,
+      "lake_bytes": 41360,
+      "snapshot_rows": 672,
+      "lake_rows": 672,
+      "matched_keys": 672,
+      "missing_keys": 0,
+      "extra_keys": 0,
+      "mismatched_rows": 0,
+      "line_terminator": "CRLF"
+    },
+    "schema": {
+      "schema_contract": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "unique_keys": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "good_le_total": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "cases_eq_floor_good_div_pack": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "yield_range_null_and_rounding": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "no_unknown_skus": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "no_unknown_lines": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "production_day_local_rule": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "oracle_values": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "_inputs": {
+        "rows": 61338,
+        "null_rows": 0,
+        "output_rows": 672
+      }
+    },
+    "rerun_deterministic": {
+      "pass": true
+    },
+    "earlier_cutoff": {
+      "as_of_utc": "2025-11-03 00:00:00",
+      "identical_to_canonical": true,
+      "reconcile_exit_code": 0,
+      "pass": true,
+      "note": "as-of-utc is accepted but not applied (legacy parity); KAN-6 AC4 expects a failure here - see docs/migration"
+    },
+    "corrupted_value": {
+      "pass": true,
+      "reconcile_exit_code": 1,
+      "mutation": "row 0 total_units += 1",
+      "output_tail": "  diff: key=PLT01|PLT01-L1|2025-10-20|SKU-TT18 col=total_units: lake='242840' legacy='242839'\n\nFAIL: daily_production ns=fuzz-20251117-corrupt (11/13 controls) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/fuzz-20251117-corrupt/reconciliation/daily_production.md"
+    }
+  },
+  "checker_self_test": {
+    "cases_off_by_one": {
+      "caught": true,
+      "tripped": [
+        "cases_eq_floor_good_div_pack",
+        "oracle_values"
+      ]
+    },
+    "good_gt_total": {
+      "caught": true,
+      "tripped": [
+        "good_le_total",
+        "oracle_values"
+      ]
+    },
+    "bankers_rounding": {
+      "caught": true,
+      "tripped": [
+        "cases_eq_floor_good_div_pack",
+        "yield_range_null_and_rounding",
+        "oracle_values"
+      ]
+    },
+    "production_day_shift": {
+      "caught": true,
+      "tripped": [
+        "production_day_local_rule"
+      ]
+    },
+    "unknown_sku_leak": {
+      "caught": true,
+      "tripped": [
+        "no_unknown_skus",
+        "production_day_local_rule"
+      ]
+    }
+  },
+  "variants": [
+    {
+      "variant": 0,
+      "rng_seed": 20251117000,
+      "namespace": "fuzz-20251117-v000",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-29 16:00:00",
+      "features": {
+        "random": 889,
+        "straddle_0600": 72,
+        "at_0600": 72,
+        "just_before_0600": 72,
+        "straddle_shift_edge": 181,
+        "dst_transition": 115,
+        "zero_total": 21,
+        "duplicate_bucket": 41,
+        "unknown_sku": 21,
+        "before_window": 10,
+        "after_window": 10,
+        "null_field": 14,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1519,
+        "null_rows": 14,
+        "output_rows": 127
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.27
+    },
+    {
+      "variant": 1,
+      "rng_seed": 20251117001,
+      "namespace": "fuzz-20251117-v001",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-21 11:00:00",
+      "features": {
+        "random": 458,
+        "straddle_0600": 41,
+        "at_0600": 41,
+        "just_before_0600": 41,
+        "straddle_shift_edge": 108,
+        "dst_transition": 70,
+        "zero_total": 17,
+        "null_field": 9,
+        "duplicate_bucket": 28,
+        "unknown_sku": 11,
+        "before_window": 7,
+        "after_window": 7,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 839,
+        "null_rows": 9,
+        "output_rows": 83
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.19
+    },
+    {
+      "variant": 2,
+      "rng_seed": 20251117002,
+      "namespace": "fuzz-20251117-v002",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-19 02:00:00",
+      "features": {
+        "random": 706,
+        "straddle_0600": 57,
+        "at_0600": 57,
+        "just_before_0600": 57,
+        "straddle_shift_edge": 156,
+        "dst_transition": 80,
+        "zero_total": 21,
+        "null_field": 12,
+        "duplicate_bucket": 23,
+        "unknown_sku": 14,
+        "before_window": 7,
+        "after_window": 7,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1198,
+        "null_rows": 13,
+        "output_rows": 103
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.13
+    },
+    {
+      "variant": 3,
+      "rng_seed": 20251117003,
+      "namespace": "fuzz-20251117-v003",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-11-02 17:00:00",
+      "features": {
+        "random": 548,
+        "straddle_0600": 38,
+        "at_0600": 38,
+        "just_before_0600": 38,
+        "straddle_shift_edge": 104,
+        "dst_transition": 55,
+        "zero_total": 15,
+        "null_field": 5,
+        "duplicate_bucket": 17,
+        "unknown_sku": 11,
+        "before_window": 5,
+        "after_window": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 880,
+        "null_rows": 5,
+        "output_rows": 75
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.09
+    },
+    {
+      "variant": 4,
+      "rng_seed": 20251117004,
+      "namespace": "fuzz-20251117-v004",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-30 13:00:00",
+      "features": {
+        "random": 701,
+        "straddle_0600": 58,
+        "at_0600": 58,
+        "just_before_0600": 58,
+        "straddle_shift_edge": 164,
+        "dst_transition": 90,
+        "zero_total": 24,
+        "duplicate_bucket": 24,
+        "unknown_sku": 16,
+        "before_window": 9,
+        "after_window": 9,
+        "null_field": 12,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1224,
+        "null_rows": 12,
+        "output_rows": 108
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.1
+    },
+    {
+      "variant": 5,
+      "rng_seed": 20251117005,
+      "namespace": "fuzz-20251117-v005",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-30 06:00:00",
+      "features": {
+        "random": 602,
+        "straddle_0600": 53,
+        "at_0600": 53,
+        "just_before_0600": 53,
+        "straddle_shift_edge": 134,
+        "dst_transition": 130,
+        "zero_total": 17,
+        "duplicate_bucket": 24,
+        "unknown_sku": 13,
+        "before_window": 7,
+        "after_window": 7,
+        "null_field": 11,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1105,
+        "null_rows": 11,
+        "output_rows": 101
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.14
+    },
+    {
+      "variant": 6,
+      "rng_seed": 20251117006,
+      "namespace": "fuzz-20251117-v006",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-08 13:00:00",
+      "features": {
+        "random": 480,
+        "straddle_0600": 41,
+        "at_0600": 41,
+        "just_before_0600": 41,
+        "straddle_shift_edge": 112,
+        "dst_transition": 40,
+        "zero_total": 16,
+        "null_field": 11,
+        "duplicate_bucket": 23,
+        "unknown_sku": 17,
+        "before_window": 7,
+        "after_window": 7,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 837,
+        "null_rows": 11,
+        "output_rows": 80
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.02
+    },
+    {
+      "variant": 7,
+      "rng_seed": 20251117007,
+      "namespace": "fuzz-20251117-v007",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-10-25 21:00:00",
+      "features": {
+        "random": 330,
+        "straddle_0600": 28,
+        "at_0600": 28,
+        "just_before_0600": 28,
+        "straddle_shift_edge": 78,
+        "dst_transition": 45,
+        "zero_total": 15,
+        "null_field": 11,
+        "duplicate_bucket": 14,
+        "unknown_sku": 10,
+        "before_window": 5,
+        "after_window": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 598,
+        "null_rows": 11,
+        "output_rows": 59
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.04
+    },
+    {
+      "variant": 8,
+      "rng_seed": 20251117008,
+      "namespace": "fuzz-20251117-v008",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-26 19:00:00",
+      "features": {
+        "random": 330,
+        "straddle_0600": 28,
+        "at_0600": 28,
+        "just_before_0600": 28,
+        "straddle_shift_edge": 74,
+        "dst_transition": 50,
+        "zero_total": 13,
+        "null_field": 11,
+        "duplicate_bucket": 17,
+        "unknown_sku": 9,
+        "before_window": 5,
+        "after_window": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 599,
+        "null_rows": 12,
+        "output_rows": 57
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.0
+    },
+    {
+      "variant": 9,
+      "rng_seed": 20251117009,
+      "namespace": "fuzz-20251117-v009",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-10 12:00:00",
+      "features": {
+        "random": 608,
+        "straddle_0600": 51,
+        "at_0600": 51,
+        "just_before_0600": 51,
+        "straddle_shift_edge": 144,
+        "dst_transition": 110,
+        "zero_total": 22,
+        "null_field": 11,
+        "duplicate_bucket": 20,
+        "unknown_sku": 13,
+        "before_window": 6,
+        "after_window": 6,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1094,
+        "null_rows": 11,
+        "output_rows": 90
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.02
+    },
+    {
+      "variant": 10,
+      "rng_seed": 20251117010,
+      "namespace": "fuzz-20251117-v010",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-03 16:00:00",
+      "features": {
+        "random": 425,
+        "straddle_0600": 35,
+        "at_0600": 35,
+        "just_before_0600": 35,
+        "straddle_shift_edge": 100,
+        "dst_transition": 80,
+        "zero_total": 20,
+        "duplicate_bucket": 20,
+        "unknown_sku": 15,
+        "before_window": 7,
+        "after_window": 7,
+        "null_field": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 784,
+        "null_rows": 4,
+        "output_rows": 73
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.02
+    },
+    {
+      "variant": 11,
+      "rng_seed": 20251117011,
+      "namespace": "fuzz-20251117-v011",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-11-05 22:00:00",
+      "features": {
+        "random": 628,
+        "straddle_0600": 48,
+        "at_0600": 48,
+        "just_before_0600": 48,
+        "straddle_shift_edge": 124,
+        "dst_transition": 70,
+        "zero_total": 21,
+        "duplicate_bucket": 18,
+        "unknown_sku": 14,
+        "before_window": 7,
+        "after_window": 7,
+        "null_field": 8,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1042,
+        "null_rows": 8,
+        "output_rows": 90
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 0.99
+    },
+    {
+      "variant": 12,
+      "rng_seed": 20251117012,
+      "namespace": "fuzz-20251117-v012",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-31 23:00:00",
+      "features": {
+        "random": 525,
+        "straddle_0600": 41,
+        "at_0600": 41,
+        "just_before_0600": 41,
+        "straddle_shift_edge": 111,
+        "zero_total": 10,
+        "null_field": 11,
+        "duplicate_bucket": 27,
+        "unknown_sku": 11,
+        "before_window": 6,
+        "after_window": 6,
+        "dst_transition": 100,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 931,
+        "null_rows": 12,
+        "output_rows": 70
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.02
+    },
+    {
+      "variant": 13,
+      "rng_seed": 20251117013,
+      "namespace": "fuzz-20251117-v013",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-09 08:00:00",
+      "features": {
+        "random": 312,
+        "straddle_0600": 25,
+        "at_0600": 25,
+        "just_before_0600": 25,
+        "straddle_shift_edge": 60,
+        "dst_transition": 55,
+        "zero_total": 9,
+        "null_field": 6,
+        "duplicate_bucket": 12,
+        "unknown_sku": 7,
+        "before_window": 4,
+        "after_window": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 545,
+        "null_rows": 6,
+        "output_rows": 46
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.02
+    },
+    {
+      "variant": 14,
+      "rng_seed": 20251117014,
+      "namespace": "fuzz-20251117-v014",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-24 10:00:00",
+      "features": {
+        "random": 695,
+        "straddle_0600": 55,
+        "at_0600": 55,
+        "just_before_0600": 55,
+        "straddle_shift_edge": 144,
+        "zero_total": 18,
+        "null_field": 17,
+        "duplicate_bucket": 23,
+        "unknown_sku": 15,
+        "before_window": 9,
+        "after_window": 9,
+        "dst_transition": 105,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1201,
+        "null_rows": 18,
+        "output_rows": 100
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.01
+    },
+    {
+      "variant": 15,
+      "rng_seed": 20251117015,
+      "namespace": "fuzz-20251117-v015",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-11-14 18:00:00",
+      "features": {
+        "random": 692,
+        "straddle_0600": 57,
+        "at_0600": 57,
+        "just_before_0600": 57,
+        "straddle_shift_edge": 164,
+        "zero_total": 19,
+        "null_field": 18,
+        "duplicate_bucket": 30,
+        "unknown_sku": 21,
+        "before_window": 9,
+        "after_window": 9,
+        "dst_transition": 160,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1294,
+        "null_rows": 19,
+        "output_rows": 106
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 0.99
+    },
+    {
+      "variant": 16,
+      "rng_seed": 20251117016,
+      "namespace": "fuzz-20251117-v016",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-24 21:00:00",
+      "features": {
+        "random": 288,
+        "straddle_0600": 23,
+        "at_0600": 23,
+        "just_before_0600": 23,
+        "straddle_shift_edge": 58,
+        "dst_transition": 60,
+        "zero_total": 10,
+        "null_field": 6,
+        "duplicate_bucket": 13,
+        "unknown_sku": 8,
+        "before_window": 4,
+        "after_window": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 521,
+        "null_rows": 6,
+        "output_rows": 40
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.07
+    },
+    {
+      "variant": 17,
+      "rng_seed": 20251117017,
+      "namespace": "fuzz-20251117-v017",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-13 12:00:00",
+      "features": {
+        "random": 756,
+        "straddle_0600": 62,
+        "at_0600": 62,
+        "just_before_0600": 62,
+        "straddle_shift_edge": 162,
+        "dst_transition": 95,
+        "zero_total": 22,
+        "duplicate_bucket": 25,
+        "unknown_sku": 19,
+        "before_window": 9,
+        "after_window": 9,
+        "null_field": 19,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1303,
+        "null_rows": 19,
+        "output_rows": 113
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.0
+    },
+    {
+      "variant": 18,
+      "rng_seed": 20251117018,
+      "namespace": "fuzz-20251117-v018",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-30 06:00:00",
+      "features": {
+        "random": 397,
+        "straddle_0600": 33,
+        "at_0600": 33,
+        "just_before_0600": 33,
+        "straddle_shift_edge": 94,
+        "dst_transition": 55,
+        "zero_total": 15,
+        "null_field": 6,
+        "duplicate_bucket": 12,
+        "unknown_sku": 10,
+        "before_window": 5,
+        "after_window": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 699,
+        "null_rows": 7,
+        "output_rows": 65
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 0.99
+    },
+    {
+      "variant": 19,
+      "rng_seed": 20251117019,
+      "namespace": "fuzz-20251117-v019",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-10-26 07:00:00",
+      "features": {
+        "random": 619,
+        "straddle_0600": 51,
+        "at_0600": 51,
+        "just_before_0600": 51,
+        "straddle_shift_edge": 142,
+        "dst_transition": 95,
+        "zero_total": 19,
+        "null_field": 9,
+        "duplicate_bucket": 25,
+        "unknown_sku": 15,
+        "before_window": 7,
+        "after_window": 7,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1092,
+        "null_rows": 9,
+        "output_rows": 95
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 0.98
+    },
+    {
+      "variant": 20,
+      "rng_seed": 20251117020,
+      "namespace": "fuzz-20251117-v020",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-24 21:00:00",
+      "features": {
+        "random": 544,
+        "straddle_0600": 43,
+        "at_0600": 43,
+        "just_before_0600": 43,
+        "straddle_shift_edge": 118,
+        "dst_transition": 80,
+        "zero_total": 12,
+        "duplicate_bucket": 16,
+        "unknown_sku": 12,
+        "before_window": 7,
+        "after_window": 7,
+        "null_field": 12,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 938,
+        "null_rows": 12,
+        "output_rows": 76
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 0.95
+    },
+    {
+      "variant": 21,
+      "rng_seed": 20251117021,
+      "namespace": "fuzz-20251117-v021",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-05 16:00:00",
+      "features": {
+        "random": 723,
+        "straddle_0600": 59,
+        "at_0600": 59,
+        "just_before_0600": 59,
+        "straddle_shift_edge": 157,
+        "dst_transition": 85,
+        "zero_total": 20,
+        "null_field": 13,
+        "duplicate_bucket": 29,
+        "unknown_sku": 18,
+        "before_window": 9,
+        "after_window": 9,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1241,
+        "null_rows": 14,
+        "output_rows": 113
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 1.01
+    },
+    {
+      "variant": 22,
+      "rng_seed": 20251117022,
+      "namespace": "fuzz-20251117-v022",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-22 22:00:00",
+      "features": {
+        "random": 662,
+        "straddle_0600": 56,
+        "at_0600": 56,
+        "just_before_0600": 56,
+        "straddle_shift_edge": 148,
+        "dst_transition": 120,
+        "zero_total": 18,
+        "duplicate_bucket": 23,
+        "unknown_sku": 13,
+        "before_window": 6,
+        "after_window": 6,
+        "null_field": 9,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1174,
+        "null_rows": 9,
+        "output_rows": 94
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 0.97
+    },
+    {
+      "variant": 23,
+      "rng_seed": 20251117023,
+      "namespace": "fuzz-20251117-v023",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-10-27 23:00:00",
+      "features": {
+        "random": 601,
+        "straddle_0600": 53,
+        "at_0600": 53,
+        "just_before_0600": 53,
+        "straddle_shift_edge": 133,
+        "zero_total": 16,
+        "null_field": 11,
+        "duplicate_bucket": 16,
+        "unknown_sku": 14,
+        "before_window": 7,
+        "after_window": 7,
+        "dst_transition": 90,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1055,
+        "null_rows": 11,
+        "output_rows": 99
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 0.97
+    },
+    {
+      "variant": 24,
+      "rng_seed": 20251117024,
+      "namespace": "fuzz-20251117-v024",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-10 04:00:00",
+      "features": {
+        "random": 640,
+        "straddle_0600": 51,
+        "at_0600": 51,
+        "just_before_0600": 51,
+        "straddle_shift_edge": 153,
+        "dst_transition": 120,
+        "zero_total": 22,
+        "null_field": 10,
+        "duplicate_bucket": 19,
+        "unknown_sku": 13,
+        "before_window": 7,
+        "after_window": 7,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 1145,
+        "null_rows": 12,
+        "output_rows": 95
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "good_le_total": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "cases_eq_floor_good_div_pack": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "yield_range_null_and_rounding": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_skus": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "production_day_local_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 0.96
+    }
+  ],
+  "summary": {
+    "variants_total": 25,
+    "variants_passed": 25,
+    "canonical_reconcile": true,
+    "canonical_byte_compare": true,
+    "rerun_deterministic": true,
+    "earlier_cutoff_identical": true,
+    "corrupted_value_detected": true,
+    "checker_mutants_caught": "5/5",
+    "seconds": 47.4,
+    "overall_pass": true
+  }
+}
