@@ -139,6 +139,15 @@ def main():
 
     # ---------------- mes.production_count ----------------
     # 15-min buckets across each production day (local 06:00 -> next 06:00).
+    # Edge cases in this feed:
+    #   * explicit zero-total buckets (~0.6%) and a whole zero-total day on
+    #     PLT06-L4 -> rpt yield_pct NULL for that group
+    #   * US / UK fall-back nights: the 01:45 local bucket ends after the
+    #     clocks go back (75 min long); the repeated hour has no buckets
+    #   * SKU-XX99 rows (not in dim.sku) -> dropped by the report join
+    # Buckets that straddle 06:00 local or a shift boundary, and spring-forward
+    # days, are exercised by tests/ and tools/fuzz_daily_production.py instead:
+    # adding units here would change the committed prod extract totals.
     pc_rows = []
     for lid, pid, _ in lines:
         _, win_tz, iana, pat = PLANTS[pid]
@@ -165,8 +174,20 @@ def main():
                 good = total - (int(total * rng.uniform(0.005, 0.03))
                                 if total else 0)
                 pc_rows.append((lid, fmt(su), fmt(eu), sku_id, total, good))
+    # edge: a SKU missing from dim.sku (legacy JOIN dim.sku drops the row).
+    # Appended after the main loop and drawn from no RNG, so every other feed
+    # and every other bucket stays byte-identical.
+    for lid, d, h in (("PLT02-L3", DAYS_LIST[6], 9), ("PLT05-L1", DAYS_LIST[20], 20)):
+        _, _, iana, _ = PLANTS[lid[:5]]
+        ls = local_dt(d, h)
+        pc_rows.append((lid, fmt(to_utc(iana, ls)),
+                        fmt(to_utc(iana, ls + timedelta(minutes=15))),
+                        "SKU-XX99", 2400, 2350))
+    # bucket_id: stable surrogate key in generation order
+    pc_rows = [(i, lid, sku, su, eu, total, good)
+               for i, (lid, su, eu, sku, total, good) in enumerate(pc_rows, start=1)]
     write_csv("mes.production_count.csv",
-              ["line_id", "bucket_start_utc", "bucket_end_utc", "sku_id",
+              ["bucket_id", "line_id", "sku_id", "bucket_start_utc", "bucket_end_utc",
                "total_units", "good_units"], pc_rows)
 
     # ---------------- mes.downtime_event ----------------

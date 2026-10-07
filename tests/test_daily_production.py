@@ -217,6 +217,20 @@ def test_shift_calendar_is_contiguous_per_plant(spark):
             assert e0 == s1, (plant, e0, s1)
 
 
+def test_shift_calendar_from_inferred_timestamp_times(spark):
+    # read_raw(inferSchema) turns '06:00' into a timestamp on today's date
+    f = _feeds(spark, [])
+    sp = f["dim.shift_pattern"].selectExpr(
+        "plant_id", "shift_code", "end_next_day",
+        "to_timestamp(concat('2030-01-01 ', local_start)) AS local_start",
+        "to_timestamp(concat('2030-01-01 ', local_end)) AS local_end")
+    rows = job.build_shift_calendar(f["dim.plant"], sp, f["dim.calendar"]).collect()
+    assert len(rows) == len(PATTERNS) * CAL_DAYS
+    r = next(r for r in rows if (r.plant_id, r.shift_code, r.production_day.isoformat())
+             == ("PLT01", "S1", "2025-10-20"))
+    assert (r.start_utc, r.end_utc) == (datetime(2025, 10, 20, 11), datetime(2025, 10, 20, 19))
+
+
 def test_fall_back_night_shift_is_one_hour_longer(spark):
     sc = _shift_cal(spark)
     s, e = sc[("PLT01", "S3", "2025-11-01")]
