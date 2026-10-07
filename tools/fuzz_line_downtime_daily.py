@@ -591,11 +591,9 @@ def checker_self_test(df, schema, d, oracle, events):
     for name, f in muts.items():
         if name == "event_count_int64_dtype":
             mut = f(df.copy())
-            got = {f_.name: str(f_.type) for f_ in pa_schema_like(mut)}
-            res = {"schema_contract": {"pass": False if got["event_count"] != SCHEMA["event_count"] else True,
-                                       "detail": "int64"}}
-            out[name] = {"caught": got["event_count"] != SCHEMA["event_count"],
-                         "tripped": ["schema_contract"] if got["event_count"] != SCHEMA["event_count"] else []}
+            r = check_output(mut, pa_schema_like(mut), d, oracle, events)
+            tripped = [k for k, v in r.items() if not k.startswith("_") and not v["pass"]]
+            out[name] = {"caught": bool(tripped), "tripped": tripped}
             continue
         r = check_output(f(df.copy()), schema, d, oracle, events)
         tripped = [k for k, v in r.items() if not k.startswith("_") and not v["pass"]]

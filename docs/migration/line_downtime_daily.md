@@ -109,3 +109,86 @@ Inputs:
 `seg_*_local` are plant wall-clock timestamps (session TZ is UTC, so the
 values print as local time). Downstream DATEDIFFs on them must use
 `datediff_minute`, as `mes.usp_calc_planned_time` does.
+
+## Step mapping
+
+| # | legacy step | PySpark equivalent | test(s) |
+|---|---|---|---|
+| 1 | `PL_Master.SP_RefreshShiftCalendar` -> `dim.shift_calendar` | `daily_production.build_shift_calendar()` (PR #5), imported | `test_stages_compose_directly_and_are_pure`, DST tests |
+| 2 | `SP_StgDowntimeLocal` -> `mes.usp_stg_downtime_local(@AsOfUtc)` -> `stg.downtime_local` | `stage_downtime_local()`: NOT NULL drops, inner joins `dim.line` / `dim.plant`, `start_utc < as_of`, `coalesce(end_utc, as_of)`, `from_utc_timestamp(.., windows_to_iana(tz_name))` | `test_event_starting_at_as_of_is_excluded`, `test_event_starting_one_second_before_as_of_is_included`, `test_open_event_is_capped_at_as_of`, `test_closed_event_past_as_of_keeps_its_real_end`, `test_unknown_line_is_dropped_in_staging`, `test_rows_violating_not_null_contract_are_dropped`, `test_char_padding_in_line_plant_id_still_joins`, `test_gmt_standard_time_is_europe_london`, `test_unmapped_tz_name_raises_keyerror` |
+| 3 | `SP_SplitDowntimeByShift` -> `mes.usp_split_downtime_by_shift` -> `stg.downtime_shift_seg` | `split_downtime_by_shift()`: shift bounds UTC -> local, strict local overlap join, `greatest` / `least` clipping, `production_day` from the shift calendar | shift-boundary / midnight / 06:00 / zero-length tests, `test_event_inside_repeated_fall_back_hour_has_negative_minutes` |
+| 4 | `SP_RptLineDowntimeDaily` -> `rpt.usp_rpt_line_downtime_daily`: `JOIN dim.downtime_reason`, `GROUP BY` 6 keys, `COUNT(DISTINCT event_id)`, `SUM(DATEDIFF(MINUTE, seg_start_local, seg_end_local))` | `build_report()` + `datediff_minute()` (minute-boundary count on local values); INT-overflow guard | `test_datediff_minute_*`, `test_fall_back_*`, `test_spring_forward_*`, `test_event_count_is_distinct_events`, `test_duplicate_event_id_counts_once_but_minutes_double`, `test_planned_flag_*`, `test_unknown_reason_survives_split_but_dropped_in_report` |
+| 5 | `COPY_rpt_line_downtime_daily_to_curated` (Parquet sink) | `write_curated(df, "line_downtime_daily", ns)` (overwrite) | `make reconcile REPORT=line_downtime_daily` |
+| 6 | ADF `PL_Line_Downtime` (AsOfUtc param, retry 2 / 60 s) | `lakehouse/adf/pipeline/PL_Line_Downtime.json`: one `DatabricksSparkPython` activity, `--ns` / `--as-of-utc @pipeline().parameters.AsOfUtc`, `LS_Databricks_Mfg`, same retry policy and sink | review |
+| 7 | `tools/reconcile.py` BIT handling | `_norm`: bool / `np.bool_` -> `1` / `0`, generic | `tests/test_reconcile.py::test_bit_*`, `test_norm_*` |
+
+## Deliberate deviations / decisions (need sign-off)
+
+1. **NULLs in NOT NULL columns.** `mes.downtime_event` columns `event_id`,
+   `line_id`, `start_utc`, `reason_code` and `planned_flag` are NOT NULL, so
+   legacy never sees NULLs there. The job drops such rows and logs
+   `dropped_not_null=<n>` instead of failing.
+2. **INT overflow.** SQL Server `SUM(INT)` raises an arithmetic overflow, but
+   Spark sums as BIGINT. The job raises `ArithmeticError` when a group's
+   `downtime_minutes` exceeds the INT range.
+3. **Duplicate `event_id`.** This is a PK violation and cannot happen in prod.
+   The job behaves the way SQL would on such rows: `event_count` counts the
+   event once, and its minutes are summed once per row. There is no dedupe.
+4. **The shift calendar is computed in-job**, using
+   `daily_production.build_shift_calendar` over the full `dim.calendar`
+   window. There is no `dim.shift_calendar` feed.
+5. **Ambiguous / non-existent local times** follow java.time / zoneinfo
+   fold=0, the documented `AT TIME ZONE` behaviour. This was not verified
+   against a live SQL Server.
+
+Legacy bugs kept for parity (not fixed without approval):
+
+- `DATEDIFF(MINUTE)` runs on local wall-clock values. Downtime across
+  fall-back is under-counted by 60 minutes, and downtime across
+  spring-forward is over-counted by 60.
+- An event that lies entirely inside the repeated fall-back hour reports
+  negative minutes.
+
+## Ticket AC status (KAN-8)
+
+| AC | status |
+|---|---|
+| Reconciles 100% vs `rpt.line_downtime_daily` snapshot (515 rows, keys, every column) | met: 13/13 controls, byte-identical CRLF CSV |
+| DST / shift split / DATEDIFF semantics preserved | met: unit tests + fuzz oracle |
+| Earlier `AsOfUtc` cutoff must fail reconcile (AC4) | met: AsOfUtc is applied as in `mes.usp_stg_downtime_local` |
+| Deterministic, no wall clock | met: source-scan test, rerun determinism |
+| ADF pipeline replaced, `PL_Master` unchanged | met (reviewed, not deployed) |
+| Public stages for KAN-7 | met: see "Public stages" |
+
+None are "not met".
+
+## Coverage gaps
+
+- `AT TIME ZONE` ambiguity handling was not checked against a live SQL
+  Server. No `dim.shift_pattern` bound falls inside a DST transition, so the
+  shift calendar is unaffected. Events inside the repeated hour are covered
+  by tests and the fuzz oracle (zoneinfo).
+- The ADF JSON was not deployed. Databricks runtime and ADLS writes were
+  exercised only via the local lake root.
+- The canonical snapshot covers only the fall-back transition. The
+  spring-forward behaviour is covered by unit tests and the fuzz variants,
+  which use a spring calendar window.
+
+## Validation evidence
+
+`tools/run_validation.sh kan8-validation 25 line_downtime_daily`, recorded,
+in a clean worktree. Artifacts:
+
+- `out/validation/line_downtime_daily_validation.html`
+- `out/validation/fuzz_line_downtime_daily.json`
+- `out/validation/pytest_line_downtime_daily.xml`
+- `out/validation/fuzz_run_line_downtime_daily.mp4`
+- `out/validation/fuzz_run_line_downtime_daily.cast`
+
+## Sign-off
+
+| role | name | date | decision |
+|---|---|---|---|
+| Migration engineer | Devin (KAN-8) | | implemented, validated |
+| MES reporting owner | | | |
+| Data platform | | | |
