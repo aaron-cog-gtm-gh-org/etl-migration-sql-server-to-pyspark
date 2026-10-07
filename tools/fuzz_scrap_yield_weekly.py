@@ -438,7 +438,8 @@ def canonical_checks(job, spark, tag, log):
                              "reconcile_exit_code": rc3,
                              "pass": _frames_equal(df, df3) and rc3 == rc,
                              "note": "as-of-utc is accepted but not applied (legacy parity); "
-                                     "KAN-9 AC4 expects identical output - see docs/migration"}
+                                     "identical output expected. KAN-9 AC4 (earlier cutoff "
+                                     "fails) not met by design"}
     log(f"  earlier cutoff {early}: identical={out['earlier_cutoff']['identical_to_canonical']} "
         f"reconcile_exit={rc3}")
     # negative control: one corrupted value must fail reconcile
@@ -523,9 +524,9 @@ def report_meta():
     return {"ticket": "KAN-9", "pipeline": "PL_Scrap_Yield",
             "table": "rpt.scrap_yield_weekly",
             "earlier_cutoff_expect": "identical",
-            "earlier_cutoff_note": "KAN-9 AC4 expects identical output here "
-                                   "(as-of not applied; not met-by-design is AC4's 'fail' "
-                                   "wording) - see docs/migration",
+            "earlier_cutoff_note": "KAN-9 AC4 expects a FAIL here; not met by design "
+                                   "(user-approved): the legacy procs never receive AsOfUtc, "
+                                   "so identical output is the parity result - see deviations",
             "parity_notes": [
                 "<b>Earlier cutoff (KAN-9 AC4).</b> <code>--as-of-utc</code> is accepted, "
                 "format-validated and not applied, as in the legacy pipeline (the procs "
@@ -551,7 +552,24 @@ def report_meta():
                 "are dropped and counted, not failed. <b>INT overflow</b> raises, like SQL "
                 "Server's arithmetic overflow.",
                 "The ADF JSON in <code>lakehouse/adf/</code> was reviewed, not deployed. "
-                "Nothing here ran on ADF or Databricks."]}
+                "Nothing here ran on ADF or Databricks.",
+                "<b>&plusmn;7200 in the alloc proc.</b> As written, <code>@ts - 7200</code> / "
+                "<code>@ts + 7200</code> on a <code>DATETIME2(0)</code> is an operand type "
+                "clash in SQL Server (the proc would error). It is read as &plusmn;7200 "
+                "<b>seconds</b>, matching the <code>DATEADD(SECOND, &plusmn;7200, @ts)</code> "
+                "bounds in the same WHERE clause. Approved deviation. It affects only the "
+                "allocation, which does not feed the report.",
+                "<b>Line terminator.</b> MANIFEST shows <code>bcp -r\\n</code>, but the "
+                "committed extract uses CRLF. The byte-compare renders CRLF.",
+                "<b>Coverage gaps.</b> <code>stg.scrap_alloc</code> has no prod extract, so it "
+                "is checked against the literal cursor port only, not prod. The "
+                "<code>order_id</code> tie-break uses binary string order, while legacy uses "
+                "the server collation; they agree for the upper-case/numeric ids in the data.",
+                "<b>Local path.</b> AC1 gives the local path as "
+                "<code>out/&lt;ns&gt;/curated/scrap_yield_weekly</code>. The shared "
+                "<code>common/paths.curated_dir</code> (PR #5) maps the abfss URI to "
+                "<code>out/&lt;ns&gt;/curated/manufacturing/scrap_yield_weekly</code>, and the "
+                "job uses the shared mapping. The abfss target matches AC1 exactly."]}
 
 
 def main():

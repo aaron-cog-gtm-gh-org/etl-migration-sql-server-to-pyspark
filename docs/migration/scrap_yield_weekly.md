@@ -72,40 +72,47 @@ week that has any staged production. Output columns:
    receive no AsOfUtc), an earlier cutoff produces *identical* output and
    the same reconcile result. AC4's "earlier cutoff makes reconcile fail"
    is therefore **not met by design** — user-approved, same as KAN-6 AC4.
-5. **`stg.production_local` is re-derived in-job** via the KAN-6 public
-   functions, not read back — same as legacy, where the rpt proc trusts the
-   staging table the alloc step just left behind.
+5. **`stg.production_local` is recomputed in-job, not shared.** The legacy
+   rpt proc reads the `stg.production_local` table that the upstream
+   `PL_Daily_Production` staged; the job recomputes the same rows through
+   KAN-6's public `build_shift_calendar` / `stage_production_local`
+   (same rows, no shared table).
 6. **Duplicate feed rows are summed**, as legacy has no PK on
    `mes.production_count` (production_order's PK does dedupe order ids in
    theory; the job keeps the join semantics either way).
+7. **`±7200` in the alloc proc is read as seconds.** As written,
+   `@ts - 7200` / `@ts + 7200` on a `DATETIME2(0)` is an operand type
+   clash in SQL Server (the proc would error). It is read as ±7200
+   **seconds**, matching the `DATEADD(SECOND, ±7200, @ts)` bounds in the
+   same WHERE clause. Approved deviation. It affects only the allocation,
+   which does not feed the report.
 
-## Ticket conflicts / AC notes
+## Coverage gaps
 
-- **AC3** (canonical reconcile green): PR #5's seed added two `SKU-XX99`
-  production_count rows (good_units 2350 each) which count toward
-  `good_units` here because the rpt proc has no `dim.sku` join — without
-  the seed fix, reconcile fails on exactly 2 rows (`(PLT02,PLT02-L3,2025,43)`
-  and `(PLT05,PLT05-L1,2025,45)`, each +2350); everything else matches
-  (oracle-verified). The user-approved fix — zeroing the units on those two
-  rows (kept as unknown-SKU rows, so `daily_production` still drops them
-  and its snapshot is unchanged) — lands on PR #5's branch
-  (`devin/1791337176-daily-production`), not this one. With it applied,
-  reconcile is 96/96 with 0 diffs.
-- **AC4** (earlier cutoff makes reconcile fail): not met by design,
-  user-approved; see deviation 4.
+- `stg.scrap_alloc` has no prod extract, so the allocation is checked
+  against the literal cursor port only, not prod.
+- `order_id` tie-break collation: legacy `ORDER BY order_id` uses the
+  server collation (typically CI); the job compares the raw string. They
+  agree for the upper-case/numeric ids in the data, so this cannot differ
+  on current data.
+
+## AC status
+
+| AC | status | evidence |
+|---|---|---|
+| AC1 | met | abfss path exact (`abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/scrap_yield_weekly`); local path note: the shared `common/paths.curated_dir` (PR #5) maps it to `out/<ns>/curated/manufacturing/scrap_yield_weekly`, which the job uses |
+| AC2 | met | tests committed in `2f1faa4` before the job in `e11b58e` |
+| AC3 | met | reconcile 96 rows, 0 missing/0 extra keys, 0 mismatches; depends on PR #5's zero-unit `SKU-XX99` seed fix (`419b220`) — without it the only diff is the 2 known `good_units` rows |
+| AC4 | partially met | corrupted value fails reconcile; rerun is identical; the earlier-cutoff FAIL is not met by design, user-approved (the procs never receive `AsOfUtc`, so identical output is the parity result) |
+| AC5 | met | `PL_Master` untouched; pipeline name, `AsOfUtc` parameter and retry policy kept |
+| AC6 | met except sign-off | doc/tests/tools complete; sign-off pending human reviewers |
+| AC7 | met | `legacy/` and `legacy_snapshots/` untouched (`git status` clean) |
 
 ## Open questions
 
 - `SKU-XX99` seed rows: **resolved** — kept as rows but zeroed in PR #5's
   seed fix, so `stg.production_local` consumers keep snapshot parity
   (see AC3).
-- The `±7200` in the alloc proc is read as **seconds** (the DATEADD bounds
-  in the same WHERE clause). No alternative reading was found that matches
-  the cursor-port oracle on the seed; confirm if a dissenting legacy
-  interpretation exists.
-- `order_id` tie-break collation: legacy `ORDER BY order_id` uses the
-  server collation (typically CI). The job compares the raw string; seed
-  order ids are uppercase+numeric so this cannot differ on current data.
 
 ## Validation
 
