@@ -1,0 +1,138 @@
+=== A: earlier --as-of-utc cutoff, NS=adv_asof ===
+PYTHONPATH=lakehouse/src .venv/bin/python -m mfg_lake.jobs.oee_shift --ns adv_asof --as-of-utc "2025-11-10 00:00:00"
+26/10/06 23:57:51 WARN Utils: Your hostname, devin-box resolves to a loopback address: 127.0.0.1; using 172.16.255.2 instead (on interface ens5)
+26/10/06 23:57:51 WARN Utils: Set SPARK_LOCAL_IP if you need to bind to another address
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/10/06 23:57:51 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2026-10-06 23:57:56,396 INFO mfg_lake.jobs.oee_shift: OEE stored procedures do not read AsOfUtc; the downtime segment stage does
+2026-10-06 23:57:58,039 INFO mfg_lake.jobs.oee_shift: stage stg.downtime_local: kept 369 of 455 source event(s); 0 capped at AsOfUtc
+2026-10-06 23:57:58,555 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.line inner join
+2026-10-06 23:57:58,781 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.plant inner join
+2026-10-06 23:57:59,244 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.shift_calendar inner join
+2026-10-06 23:58:00,111 INFO mfg_lake.jobs.oee_shift: dropped 0 shift_calendar row(s) with no dim.line plant match
+2026-10-06 23:58:00,478 INFO mfg_lake.jobs.oee_shift: dropped 0 downtime segment(s) with no calendar×line match
+2026-10-06 23:58:01,131 INFO mfg_lake.jobs.oee_shift: stage stg.downtime_shift_seg: 426 row(s)
+2026-10-06 23:58:01,625 INFO mfg_lake.jobs.oee_shift: stage stg.production_local: 61336 row(s)
+2026-10-06 23:58:02,001 INFO mfg_lake.jobs.oee_shift: stage stg.planned_time: 1792 row(s)
+2026-10-06 23:58:02,213 INFO mfg_lake.jobs.oee_shift: dropped 0 production_local row(s) at dim.sku inner join
+2026-10-06 23:58:02,867 INFO mfg_lake.jobs.oee_shift: filtered 0 planned_time row(s) before 2025-10-20
+2026-10-06 23:58:03,253 INFO mfg_lake.jobs.oee_shift: dropped 0 planned_time row(s) with no production row
+2026-10-06 23:58:03,662 INFO mfg_lake.jobs.oee_shift: dropped 0 production row(s) with no planned_time row
+2026-10-06 23:58:05,686 INFO mfg_lake.jobs.oee_shift: wrote 1792 row(s) to oee_shift -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/adv_asof/curated/manufacturing/oee_shift
+2026-10-06 23:58:05,913 INFO py4j.clientserver: Closing down clientserver connection
+make reconcile REPORT=oee_shift NS=adv_asof
+.venv/bin/python tools/reconcile.py --report oee_shift --ns adv_asof
+PASS  row_count                         lake=1792 legacy=1792
+PASS  key_set                           missing=0 extra=0
+PASS  col[plant_id].mismatches          n=0
+PASS  col[line_id].mismatches           n=0
+PASS  col[production_day].mismatches    n=0
+PASS  col[shift_code].mismatches        n=0
+PASS  col[planned_min].checksum         lake=968640.0000 legacy=968640.0000
+PASS  col[planned_min].mismatches       n=0
+FAIL  col[unplanned_dt_min].checksum    lake=28204.0000 legacy=35719.0000
+FAIL  col[unplanned_dt_min].mismatches  n=92
+FAIL  col[availability].checksum        lake=1740.1684 legacy=1726.4051
+FAIL  col[availability].mismatches      n=92
+PASS  col[performance].checksum         lake=1574.5355 legacy=1574.5355
+PASS  col[performance].mismatches       n=0
+PASS  col[quality].mismatches           n=0
+FAIL  col[oee].mismatches               n=92
+  diff: key=PLT01|PLT01-L1|2025-11-11|S1 col=unplanned_dt_min: lake='0' legacy='141'
+  diff: key=PLT01|PLT01-L1|2025-11-11|S1 col=availability: lake='1.0000' legacy='0.7063'
+  diff: key=PLT01|PLT01-L1|2025-11-11|S1 col=oee: lake='0.8801' legacy='0.6216'
+  diff: key=PLT01|PLT01-L1|2025-11-14|S1 col=unplanned_dt_min: lake='0' legacy='127'
+  diff: key=PLT01|PLT01-L1|2025-11-14|S1 col=availability: lake='1.0000' legacy='0.7354'
+  diff: key=PLT01|PLT01-L1|2025-11-14|S1 col=oee: lake='0.8548' legacy='0.6287'
+  diff: key=PLT01|PLT01-L1|2025-11-16|S1 col=unplanned_dt_min: lake='0' legacy='162'
+  diff: key=PLT01|PLT01-L1|2025-11-16|S1 col=availability: lake='1.0000' legacy='0.6625'
+  diff: key=PLT01|PLT01-L1|2025-11-16|S1 col=oee: lake='0.8757' legacy='0.5802'
+  diff: key=PLT01|PLT01-L2|2025-11-09|S2 col=unplanned_dt_min: lake='0' legacy='128'
+
+FAIL: oee_shift ns=adv_asof (11/16 controls) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/adv_asof/reconciliation/oee_shift.md
+make: *** [Makefile:22: reconcile] Error 1
+A reconcile exit=2
+Expected reconcile failure captured (make exit=2)
+
+=== B: canonical overwrite determinism, NS=adv_r1 and adv_r2 ===
+make run JOB=oee_shift NS=adv_r1 AS_OF_UTC="2025-11-17 00:00:00"
+.venv/bin/python -m mfg_lake.jobs.oee_shift --ns adv_r1 --as-of-utc "2025-11-17 00:00:00"
+26/10/06 23:58:57 WARN Utils: Your hostname, devin-box resolves to a loopback address: 127.0.0.1; using 172.16.255.2 instead (on interface ens5)
+26/10/06 23:58:57 WARN Utils: Set SPARK_LOCAL_IP if you need to bind to another address
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/10/06 23:58:57 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2026-10-06 23:59:02,378 INFO mfg_lake.jobs.oee_shift: OEE stored procedures do not read AsOfUtc; the downtime segment stage does
+2026-10-06 23:59:04,024 INFO mfg_lake.jobs.oee_shift: stage stg.downtime_local: kept 450 of 455 source event(s); 1 capped at AsOfUtc
+2026-10-06 23:59:04,757 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.line inner join
+2026-10-06 23:59:04,969 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.plant inner join
+2026-10-06 23:59:05,472 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.shift_calendar inner join
+2026-10-06 23:59:06,675 INFO mfg_lake.jobs.oee_shift: dropped 0 shift_calendar row(s) with no dim.line plant match
+2026-10-06 23:59:07,061 INFO mfg_lake.jobs.oee_shift: dropped 0 downtime segment(s) with no calendar×line match
+2026-10-06 23:59:07,605 INFO mfg_lake.jobs.oee_shift: stage stg.downtime_shift_seg: 520 row(s)
+[Stage 95:=============================>                            (1 + 1) / 2]                                                                                2026-10-06 23:59:08,384 INFO mfg_lake.jobs.oee_shift: stage stg.production_local: 61336 row(s)
+2026-10-06 23:59:08,700 INFO mfg_lake.jobs.oee_shift: stage stg.planned_time: 1792 row(s)
+2026-10-06 23:59:08,863 INFO mfg_lake.jobs.oee_shift: dropped 0 production_local row(s) at dim.sku inner join
+2026-10-06 23:59:09,600 INFO mfg_lake.jobs.oee_shift: filtered 0 planned_time row(s) before 2025-10-20
+2026-10-06 23:59:10,079 INFO mfg_lake.jobs.oee_shift: dropped 0 planned_time row(s) with no production row
+2026-10-06 23:59:10,549 INFO mfg_lake.jobs.oee_shift: dropped 0 production row(s) with no planned_time row
+2026-10-06 23:59:12,800 INFO mfg_lake.jobs.oee_shift: wrote 1792 row(s) to oee_shift -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/adv_r1/curated/manufacturing/oee_shift
+2026-10-06 23:59:12,974 INFO py4j.clientserver: Closing down clientserver connection
+adv_r1 job exit=0
+make run JOB=oee_shift NS=adv_r2 AS_OF_UTC="2025-11-17 00:00:00"
+.venv/bin/python -m mfg_lake.jobs.oee_shift --ns adv_r2 --as-of-utc "2025-11-17 00:00:00"
+26/10/06 23:59:14 WARN Utils: Your hostname, devin-box resolves to a loopback address: 127.0.0.1; using 172.16.255.2 instead (on interface ens5)
+26/10/06 23:59:14 WARN Utils: Set SPARK_LOCAL_IP if you need to bind to another address
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/10/06 23:59:14 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2026-10-06 23:59:19,589 INFO mfg_lake.jobs.oee_shift: OEE stored procedures do not read AsOfUtc; the downtime segment stage does
+2026-10-06 23:59:21,550 INFO mfg_lake.jobs.oee_shift: stage stg.downtime_local: kept 450 of 455 source event(s); 1 capped at AsOfUtc
+2026-10-06 23:59:22,126 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.line inner join
+2026-10-06 23:59:22,472 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.plant inner join
+2026-10-06 23:59:22,895 INFO mfg_lake.jobs.daily_production: dropped 0 bucket(s) at dim.shift_calendar inner join
+2026-10-06 23:59:23,849 INFO mfg_lake.jobs.oee_shift: dropped 0 shift_calendar row(s) with no dim.line plant match
+2026-10-06 23:59:24,196 INFO mfg_lake.jobs.oee_shift: dropped 0 downtime segment(s) with no calendar×line match
+2026-10-06 23:59:24,846 INFO mfg_lake.jobs.oee_shift: stage stg.downtime_shift_seg: 520 row(s)
+2026-10-06 23:59:25,355 INFO mfg_lake.jobs.oee_shift: stage stg.production_local: 61336 row(s)
+2026-10-06 23:59:25,710 INFO mfg_lake.jobs.oee_shift: stage stg.planned_time: 1792 row(s)
+2026-10-06 23:59:25,890 INFO mfg_lake.jobs.oee_shift: dropped 0 production_local row(s) at dim.sku inner join
+2026-10-06 23:59:26,653 INFO mfg_lake.jobs.oee_shift: filtered 0 planned_time row(s) before 2025-10-20
+2026-10-06 23:59:26,958 INFO mfg_lake.jobs.oee_shift: dropped 0 planned_time row(s) with no production row
+2026-10-06 23:59:27,377 INFO mfg_lake.jobs.oee_shift: dropped 0 production row(s) with no planned_time row
+[Stage 163:>                                                        (0 + 1) / 1]                                                                                2026-10-06 23:59:30,299 INFO mfg_lake.jobs.oee_shift: wrote 1792 row(s) to oee_shift -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/adv_r2/curated/manufacturing/oee_shift
+2026-10-06 23:59:30,361 INFO py4j.clientserver: Closing down clientserver connection
+adv_r2 job exit=0
+adv_r1 sha256=36214346b8c090e3a518a3daff86a95f8841a74ca581518c53e35d55ceca5029 bytes=113124
+adv_r2 sha256=36214346b8c090e3a518a3daff86a95f8841a74ca581518c53e35d55ceca5029 bytes=113124
+CSV byte-identical=True
+B verdict=PASS adv_r1_job_exit=0 adv_r2_job_exit=0 compare_exit=0
+
+=== C: one-value oee corruption, NS=adv_corrupt ===
+copied 1 parquet file(s); preserved schema: True
+changed exactly one oee value of first sorted row: key=PLT01|PLT01-L1|2025-10-20|S1 0.8358 -> 0.8359
+make reconcile REPORT=oee_shift NS=adv_corrupt
+.venv/bin/python tools/reconcile.py --report oee_shift --ns adv_corrupt
+PASS  row_count                         lake=1792 legacy=1792
+PASS  key_set                           missing=0 extra=0
+PASS  col[plant_id].mismatches          n=0
+PASS  col[line_id].mismatches           n=0
+PASS  col[production_day].mismatches    n=0
+PASS  col[shift_code].mismatches        n=0
+PASS  col[planned_min].checksum         lake=968640.0000 legacy=968640.0000
+PASS  col[planned_min].mismatches       n=0
+PASS  col[unplanned_dt_min].checksum    lake=35719.0000 legacy=35719.0000
+PASS  col[unplanned_dt_min].mismatches  n=0
+PASS  col[availability].checksum        lake=1726.4051 legacy=1726.4051
+PASS  col[availability].mismatches      n=0
+PASS  col[performance].checksum         lake=1574.5355 legacy=1574.5355
+PASS  col[performance].mismatches       n=0
+PASS  col[quality].mismatches           n=0
+FAIL  col[oee].mismatches               n=1
+  diff: key=PLT01|PLT01-L1|2025-10-20|S1 col=oee: lake='0.8359' legacy='0.8358'
+
+FAIL: oee_shift ns=adv_corrupt (15/16 controls) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/adv_corrupt/reconciliation/oee_shift.md
+make: *** [Makefile:22: reconcile] Error 1
+C reconcile exit=2
+Expected reconcile failure captured (make exit=2)
