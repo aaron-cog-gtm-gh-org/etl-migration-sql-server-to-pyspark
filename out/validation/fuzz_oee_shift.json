@@ -1,0 +1,1724 @@
+{
+  "report_meta": {
+    "ticket": "KAN-7",
+    "pipeline": "PL_OEE",
+    "fuzz_input": "mes.production_count + mes.downtime_event + dim.calendar + dim.sku",
+    "bcp_note": "ORDER BY key, NULL = empty, decimals with 4 dp",
+    "oracle_note_html": "<code>row_by_row_equality</code>, metric checks, and planned-time checks compare every output against <code>tools/oracle_oee_shift.py</code>, an independent pure-Python implementation of the legacy data flow.",
+    "as_of_header": "as_of_utc (applied through imported downtime stage)",
+    "earlier_cutoff_label": "earlier cutoff {as_of_utc} changes OEE through the imported KAN-8 downtime stage; reconcile FAIL is expected",
+    "earlier_cutoff_detail": "changed_rows={changed_vs_canonical}, reconcile exit {reconcile_exit_code}; derived from the legacy data flow",
+    "parity_notes_html": [
+      "<b>AsOfUtc: discrepancy with the playbook table.</b> Neither OEE proc receives AsOfUtc, and the job adds no cutoff filter. <code>as_of_utc</code> goes only into the imported KAN-8 <code>stage_downtime_local</code> (<code>start_utc &lt; AsOfUtc</code>, open events capped), which feeds <code>stg.downtime_shift_seg</code> \u2192 <code>mes.usp_calc_planned_time</code>. An earlier cutoff therefore changes OEE (2025-11-10: 92 values; 2025-11-16 12:00: 9; 2025-11-20: 7; 2025-11-17 00:00:01: 0), and the expected earlier-cutoff outcome is reconcile FAIL. The playbook's AsOfUtc table lists PL_OEE as IDENTICAL, which is wrong for this pipeline.",
+      "<b>Ticket behaviour not met, by design.</b> KAN-7 says \"planned minutes = shift length minus PLANNED downtime\". Legacy computes <code>planned_dt_min</code> but never uses it: <code>planned_min = shift_minutes</code> (DATEDIFF on UTC bounds; 540/780 on fall-back nights), and availability = (shift \u2212 unplanned) / shift. The extract agrees: PLT02-L1 2025-10-30 S1 has 90 planned downtime minutes, <code>planned_min=480</code>, <code>availability=1.0000</code>.",
+      "<b>Rounding.</b> The extract matches each metric's exact ratio rounded once to 4 dp, half away from zero, with OEE = (s\u2212u)\u00b7G / (s\u00b7I) and a NULLIF guard on total units. A chain of Spark decimal divisions gives 4 diffs, and multiplying rounded components also differs (PLT03-L1 2025-10-23 S3: 0.8655 vs 0.8654). The job uses exact DECIMAL(38,0) integer arithmetic.",
+      "<b>Downtime minutes</b> use DATEDIFF(MINUTE) on local segment bounds via KAN-8's <code>datediff_minute</code>. The hard-coded <code>production_day &gt;= '2025-10-20'</code> filter is kept.",
+      "<b>Canonical seed edge cases.</b> PLT06-L4 2025-11-04 (zero-total day) gives NULL quality and oee and performance 0.0000. <code>SKU-XX99</code> buckets are dropped by the <code>dim.sku</code> inner join. Spring-forward days, boundary straddles, duplicates, unknown keys, open events and pre-floor rows are covered by the unit tests and the fuzz variants.",
+      "<b>No seed tuning was needed.</b> The existing seed reproduces the extract byte-for-byte. The seed was not fitted to the snapshot.",
+      "<b>Line terminator.</b> MANIFEST shows <code>bcp -r\\n</code>, but the committed extract uses CRLF. The byte-compare renders CRLF.",
+      "<b>NULLs in NOT NULL source columns</b> (impossible in legacy) are dropped and counted by the imported stages. <b>INT / DECIMAL overflow</b> raises, like SQL Server.",
+      "<b>Ambiguous / gap local times</b> follow java.time / zoneinfo fold=0 (the documented AT TIME ZONE behaviour). This was not verified against a live SQL Server.",
+      "The ADF JSON in <code>lakehouse/adf/</code> was reviewed, not deployed. Nothing here ran on ADF or Databricks."
+    ]
+  },
+  "environment": {
+    "python": "3.10.12",
+    "pyspark": "3.5.3",
+    "spark": "3.5.3",
+    "java": "17.0.19",
+    "jvm_tzdb": "2026a",
+    "pandas": "2.3.3",
+    "platform": "Linux-6.8.0-1061-aws-x86_64-with-glibc2.35",
+    "spark_session_tz": "UTC",
+    "as_of_utc": "2025-11-17 00:00:00",
+    "fuzz_seed": 20251117,
+    "variants": 25,
+    "seed_py_SEED": 20251020,
+    "git_commit": "29e271276c33563d85ac3c22ce05f4fb5e87368d",
+    "started_utc": "2026-10-07 04:45:07"
+  },
+  "canonical": {
+    "reconcile": {
+      "pass": true,
+      "exit_code": 0,
+      "output": "PASS  row_count                         lake=1792 legacy=1792\nPASS  key_set                           missing=0 extra=0\nPASS  col[plant_id].mismatches          n=0\nPASS  col[line_id].mismatches           n=0\nPASS  col[production_day].mismatches    n=0\nPASS  col[shift_code].mismatches        n=0\nPASS  col[planned_min].checksum         lake=968640.0000 legacy=968640.0000\nPASS  col[planned_min].mismatches       n=0\nPASS  col[unplanned_dt_min].checksum    lake=35719.0000 legacy=35719.0000\nPASS  col[unplanned_dt_min].mismatches  n=0\nPASS  col[availability].checksum        lake=1726.4051 legacy=1726.4051\nPASS  col[availability].mismatches      n=0\nPASS  col[performance].checksum         lake=1574.5355 legacy=1574.5355\nPASS  col[performance].mismatches       n=0\nPASS  col[quality].mismatches           n=0\nPASS  col[oee].mismatches               n=0\n\nPASS: oee_shift ns=fuzz-20251117-canonical (16/16 controls) -> /home/ubuntu/wt-kan7/out/fuzz-20251117-canonical/reconciliation/oee_shift.md\n"
+    },
+    "byte_compare": {
+      "pass": true,
+      "snapshot_sha256": "6e5e1858e17edc6e9e7163de3415ff68232aecc2667f44f8d8a926676294f85f",
+      "lake_csv_sha256": "6e5e1858e17edc6e9e7163de3415ff68232aecc2667f44f8d8a926676294f85f",
+      "snapshot_bytes": 114917,
+      "lake_bytes": 114917,
+      "snapshot_rows": 1792,
+      "lake_rows": 1792,
+      "matched_keys": 1792,
+      "missing_keys": 0,
+      "extra_keys": 0,
+      "mismatched_rows": 0,
+      "line_terminator": "CRLF"
+    },
+    "schema": {
+      "row_by_row_equality": {
+        "pass": true,
+        "detail": "missing=0, extra=0, value_mismatches=0"
+      },
+      "unique_keys": {
+        "pass": true,
+        "detail": "rows=1792, duplicate_keys=0"
+      },
+      "planned_min_matches_utc_shift": {
+        "pass": true,
+        "detail": "mismatches=0"
+      },
+      "unplanned_minutes_nonnegative": {
+        "pass": true,
+        "detail": "negative_rows=0"
+      },
+      "metric_nulls_and_exact_rounding": {
+        "pass": true,
+        "detail": "ratio_or_null_mismatches=0"
+      },
+      "production_day_floor": {
+        "pass": true,
+        "detail": "pre_floor_rows=0"
+      },
+      "keys_subset_calendar_with_production": {
+        "pass": true,
+        "detail": "keys_without_calendar_or_production=0"
+      },
+      "schema_contract": {
+        "pass": true,
+        "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+      }
+    },
+    "rerun_deterministic": {
+      "pass": true
+    },
+    "earlier_cutoff": {
+      "as_of_utc": "2025-11-10 00:00:00",
+      "changed_vs_canonical": 92,
+      "identical_to_canonical": false,
+      "reconcile_exit_code": 1,
+      "pass": true,
+      "note": "Expected reconcile failure follows the legacy flow: the imported KAN-8 downtime stage applies AsOfUtc before planned-time aggregation."
+    },
+    "corrupted_value": {
+      "pass": true,
+      "reconcile_exit_code": 1,
+      "mutation": "first key planned_min += 1",
+      "output_tail": "  diff: key=PLT01|PLT01-L1|2025-10-20|S1 col=planned_min: lake='481' legacy='480'\n\nFAIL: oee_shift ns=fuzz-20251117-corrupt (14/16 controls) -> /home/ubuntu/wt-kan7/out/fuzz-20251117-corrupt/reconciliation/oee_shift.md"
+    }
+  },
+  "checker_self_test": {
+    "drop_row": {
+      "caught": true,
+      "tripped": [
+        "row_by_row_equality"
+      ]
+    },
+    "duplicate_key": {
+      "caught": true,
+      "tripped": [
+        "unique_keys"
+      ]
+    },
+    "planned_min_subtracts_planned_downtime": {
+      "caught": true,
+      "tripped": [
+        "row_by_row_equality",
+        "planned_min_matches_utc_shift"
+      ]
+    },
+    "off_by_one_rounding": {
+      "caught": true,
+      "tripped": [
+        "row_by_row_equality",
+        "metric_nulls_and_exact_rounding"
+      ]
+    },
+    "metric_flipped_to_null": {
+      "caught": true,
+      "tripped": [
+        "row_by_row_equality",
+        "metric_nulls_and_exact_rounding"
+      ]
+    },
+    "pre_floor_row": {
+      "caught": true,
+      "tripped": [
+        "row_by_row_equality",
+        "planned_min_matches_utc_shift",
+        "production_day_floor",
+        "keys_subset_calendar_with_production"
+      ]
+    },
+    "extra_key": {
+      "caught": true,
+      "tripped": [
+        "row_by_row_equality",
+        "planned_min_matches_utc_shift",
+        "keys_subset_calendar_with_production"
+      ]
+    }
+  },
+  "variants": [
+    {
+      "variant": 0,
+      "rng_seed": 20251117,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-02 08:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 1,
+      "rng_seed": 20251118,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-12 10:00:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 2,
+      "rng_seed": 20251119,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-07 08:17:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 3,
+      "rng_seed": 20251120,
+      "calendar_window": "spring-2026",
+      "as_of_utc": "2026-03-22 12:17:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1793
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1793, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 4,
+      "rng_seed": 20251121,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-08 17:17:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 5,
+      "rng_seed": 20251122,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-10-25 18:17:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 6,
+      "rng_seed": 20251123,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-03 13:17:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 7,
+      "rng_seed": 20251124,
+      "calendar_window": "spring-2026",
+      "as_of_utc": "2026-03-14 17:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1793
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1793, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 8,
+      "rng_seed": 20251125,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-10-28 18:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 9,
+      "rng_seed": 20251126,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-07 11:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 10,
+      "rng_seed": 20251127,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-10-26 10:00:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 11,
+      "rng_seed": 20251128,
+      "calendar_window": "spring-2026",
+      "as_of_utc": "2026-03-14 20:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1793
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1793, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 12,
+      "rng_seed": 20251129,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-01 23:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 13,
+      "rng_seed": 20251130,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-10-30 12:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 14,
+      "rng_seed": 20251131,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-01 23:17:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 15,
+      "rng_seed": 20251132,
+      "calendar_window": "spring-2026",
+      "as_of_utc": "2026-03-18 19:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1793
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1793, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 16,
+      "rng_seed": 20251133,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-04 19:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 17,
+      "rng_seed": 20251134,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-10 07:17:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 18,
+      "rng_seed": 20251135,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-10-27 15:17:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 19,
+      "rng_seed": 20251136,
+      "calendar_window": "spring-2026",
+      "as_of_utc": "2026-03-29 19:00:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1793
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1793, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 20,
+      "rng_seed": 20251137,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-10-25 18:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 21,
+      "rng_seed": 20251138,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-12 12:00:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 22,
+      "rng_seed": 20251139,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-01 12:41:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 23,
+      "rng_seed": 20251140,
+      "calendar_window": "spring-2026",
+      "as_of_utc": "2026-03-19 07:17:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1793
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1793, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    },
+    {
+      "variant": 24,
+      "rng_seed": 20251141,
+      "calendar_window": "canonical-2025",
+      "as_of_utc": "2025-11-15 14:00:00",
+      "pass": true,
+      "violations": [],
+      "features": {
+        "dst_events": 1,
+        "dst_buckets": 1,
+        "shift_boundary_events": 1,
+        "straddling_buckets": 1,
+        "open_events": 1,
+        "zero_unit_buckets": 1,
+        "zero_rate_buckets": 1,
+        "duplicated_buckets": 1,
+        "duplicated_events": 1,
+        "unknown_sku_buckets": 1,
+        "unknown_line_buckets": 1,
+        "pre_floor_buckets": 1
+      },
+      "inputs": {
+        "rows": 61806,
+        "null_rows": 0,
+        "open_events": 3,
+        "output_rows": 1792
+      },
+      "invariants": {
+        "row_by_row_equality": {
+          "pass": true,
+          "detail": "missing=0, extra=0, value_mismatches=0"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "rows=1792, duplicate_keys=0"
+        },
+        "planned_min_matches_utc_shift": {
+          "pass": true,
+          "detail": "mismatches=0"
+        },
+        "unplanned_minutes_nonnegative": {
+          "pass": true,
+          "detail": "negative_rows=0"
+        },
+        "metric_nulls_and_exact_rounding": {
+          "pass": true,
+          "detail": "ratio_or_null_mismatches=0"
+        },
+        "production_day_floor": {
+          "pass": true,
+          "detail": "pre_floor_rows=0"
+        },
+        "keys_subset_calendar_with_production": {
+          "pass": true,
+          "detail": "keys_without_calendar_or_production=0"
+        },
+        "schema_contract": {
+          "pass": true,
+          "detail": "columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']; expected columns=['plant_id', 'line_id', 'production_day', 'shift_code', 'planned_min', 'unplanned_dt_min', 'availability', 'performance', 'quality', 'oee']; expected types=['string', 'string', 'date32[day]', 'string', 'int32', 'int32', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)', 'decimal128(9, 4)']"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "overall_pass": true,
+    "variants_total": 25,
+    "variants_passed": 25,
+    "variants_failed": 0,
+    "checker_mutants_total": 7,
+    "checker_mutants_caught": "7/7"
+  }
+}

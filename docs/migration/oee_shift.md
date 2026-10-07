@@ -118,11 +118,11 @@ of them conflicts with the legacy procs:
 |---|---|---|
 | 1. `mfg_lake.jobs.oee_shift` with `--ns` / `--as-of-utc`, writes curated `oee_shift` | met | `test_cli_requires_and_parses_ns_and_as_of_utc`, `make run JOB=oee_shift` |
 | 2. Tests before the job, covering the listed behaviours | met, except the planned-minutes behaviour (not met, by design; above) | tests commit precedes the job commit. `test_planned_and_unplanned_downtime_are_separate` pins the legacy behaviour. |
-| 3. `make reconcile REPORT=oee_shift` passes: 1792 rows, 0/0 keys, 0 mismatches | met | see Validation evidence |
+| 3. `make reconcile REPORT=oee_shift` passes: 1792 rows, 0/0 keys, 0 mismatches | met | `PASS: oee_shift (16/16 controls)`; see Validation evidence |
 | 4. Earlier cutoff and a corrupted value fail reconcile; rerun is identical | met | The earlier cutoff fails only through the imported KAN-8 downtime stage (see `AsOfUtc`). It contradicts the playbook table, not the ticket. |
 | 5. `PL_OEE.json`: single Spark activity; name, `AsOfUtc` and `PL_Master` dependencies unchanged | met | `lakehouse/adf/pipeline/PL_OEE.json`. Legacy PL_OEE has no retry policy, and none is added. |
 | 6. Mapping doc with deviations and sign-off | met | this document |
-| 7. `legacy/` and `legacy_snapshots/` unchanged; PR with green CI | met locally (checksums in the recorded run); CI pending | |
+| 7. `legacy/` and `legacy_snapshots/` unchanged; PR with green CI | met | checksums in the recorded run; PR #8 CI |
 
 ## Deviations and data handling
 
@@ -152,19 +152,32 @@ procedure's misleading comment and the ticket's AC1 definition.
 
 ## Validation evidence
 
-_To be filled after the validation and fuzz runs._
+Recorded run of `tools/run_validation.sh kan7val 25 oee_shift`, in a clean
+worktree at 29e2712 with a regenerated seed. Artifacts are in `out/validation/`:
+`oee_shift_validation.html`, `fuzz_oee_shift.json`, `pytest_oee_shift.xml`,
+`fuzz_run_oee_shift.{mp4,cast}`.
 
-- `make test`: _pending_
-- `make run JOB=oee_shift NS=dev` + reconcile: _pending_
-- `make ci`: _pending_
-- fuzz runs: _pending_
-- canonical bcp compare: _pending_
+- `make test`: 136 passed, 0 failed.
+- Reconcile: `PASS: oee_shift ns=kan7val (16/16 controls)`. That is 1792 rows,
+  0 missing and 0 extra keys, 0 mismatches, `numeric_tolerance` unchanged.
+- `make ci`: CI OK; every migrated job reconciles.
+- Canonical bcp compare: the CRLF render is byte-identical to
+  `legacy_snapshots/rpt.oee_shift.csv` (114,917 bytes, same SHA-256).
+- Fuzz (seed 20251117): `overall_pass=true`, 25/25 variants, 7/7 checker
+  mutants caught. A separate run with seed 20251118 also passes.
+- Adversarial checks:
+  - Earlier cutoff 2025-11-10 changes 92 rows, and reconcile FAILs
+    (expected; see `AsOfUtc`).
+  - One corrupted value makes reconcile FAIL.
+  - A rerun is deterministic.
+- `legacy_snapshots/*` checksums are identical before and after the run.
+- Rendered HTML: 196/196 checks pass.
 
 ## Sign-off
 
 | role | name | date | decision |
 |---|---|---|---|
-| Migration engineer | Devin (KAN-7) | | implemented, validation pending |
+| Migration engineer | Devin (KAN-7) | 2026-10-07 | implemented and validated locally |
 | MES reporting owner | | | |
 | Data platform | | | |
 
