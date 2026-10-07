@@ -81,3 +81,31 @@ rows and differs from the snapshot. No seed change is needed.
 - Shared helpers are imported from `daily_production` (PR #5) rather than
   moved into `mfg_lake/common/`, to keep parallel sibling branches from
   conflicting on a new common module; `daily_production.py` is unchanged.
+
+## Public stages
+
+Pure `DataFrame -> DataFrame` functions in `mfg_lake.jobs.line_downtime_daily`,
+stable for downstream jobs (KAN-7 `PL_OEE` imports them instead of
+re-deriving `stg.downtime_shift_seg`). Column tuples are exported as
+constants. No stage reads the clock or applies a filter the legacy proc does
+not.
+
+| function | legacy equivalent | output columns (type) |
+|---|---|---|
+| `stage_downtime_local(downtime_event, line, plant, as_of_utc)` | `mes.usp_stg_downtime_local` -> `stg.downtime_local` | `STG_DOWNTIME_LOCAL_COLUMNS`: `event_id` int, `plant_id` string, `line_id` string, `reason_code` string, `planned_flag` boolean, `start_utc` timestamp, `end_utc` timestamp (NULL ends capped at `as_of_utc`), `start_local` timestamp, `end_local` timestamp |
+| `split_downtime_by_shift(downtime_local, plant, shift_calendar)` | `mes.usp_split_downtime_by_shift` -> `stg.downtime_shift_seg` | `STG_DOWNTIME_SHIFT_SEG_COLUMNS`: `event_id` int, `plant_id` string, `line_id` string, `reason_code` string, `planned_flag` boolean, `production_day` date, `shift_code` string, `seg_start_local` timestamp, `seg_end_local` timestamp |
+| `build_report(downtime_shift_seg, downtime_reason)` | `rpt.usp_rpt_line_downtime_daily` | `OUTPUT_COLUMNS` (types above) plus helper `_minutes_raw` bigint used by the INT-overflow guard; `transform` selects `OUTPUT_COLUMNS` only |
+| `datediff_minute(start, end)` | `DATEDIFF(MINUTE, start, end)` | int Column expression |
+| `parse_as_of_utc(value)` | `@AsOfUtc DATETIME2(0)` | naive UTC `datetime` |
+
+Inputs:
+
+- `downtime_event`: raw `mes.downtime_event` (`read_raw` schema or strings).
+- `line`, `plant`, `downtime_reason`: raw `dim.*` feeds. String keys are trimmed.
+- `as_of_utc`: a `datetime` or text accepted by `parse_as_of_utc`.
+- `shift_calendar`: `daily_production.build_shift_calendar(dim.plant, dim.shift_pattern, dim.calendar)`.
+- `downtime_local`: the output of `stage_downtime_local`.
+
+`seg_*_local` are plant wall-clock timestamps (session TZ is UTC, so the
+values print as local time). Downstream DATEDIFFs on them must use
+`datediff_minute`, as `mes.usp_calc_planned_time` does.
