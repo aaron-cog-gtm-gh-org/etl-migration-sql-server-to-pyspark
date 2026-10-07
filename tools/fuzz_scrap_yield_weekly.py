@@ -527,7 +527,22 @@ def report_meta():
             "earlier_cutoff_note": "KAN-9 AC4 expects a FAIL here; not met by design "
                                    "(user-approved): the legacy procs never receive AsOfUtc, "
                                    "so identical output is the parity result - see deviations",
-            "parity_notes": [
+            "fuzz_input": "mes.scrap_event / mes.production_count / mes.production_order",
+            "bcp_note": "ORDER BY key, NULL = empty, 2-dp decimals",
+            "oracle_note_html": "<code>oracle_keys</code> / <code>oracle_values</code> "
+                                "compare every output row, and "
+                                "<code>alloc_matches_cursor_port</code> every allocation "
+                                "row, against an independent pure-Python port of the legacy "
+                                "procs (<code>tools/oracle_scrap_yield_weekly.py</code>: "
+                                "literal cursor allocation, Decimal half-away-from-zero, "
+                                "the SQL Server ISO-year trick).",
+            "as_of_header": "as_of_utc (ignored)",
+            "earlier_cutoff_label": "earlier cutoff {as_of_utc} (as-of not applied)",
+            "earlier_cutoff_detail": "identical={identical_to_canonical}, reconcile exit "
+                                     "{reconcile_exit_code}; KAN-9 AC4 expects a FAIL here, "
+                                     "not met by design (user-approved): the procs never "
+                                     "receive AsOfUtc (see deviations)",
+            "parity_notes_html": [
                 "<b>Earlier cutoff (KAN-9 AC4).</b> <code>--as-of-utc</code> is accepted, "
                 "format-validated and not applied, as in the legacy pipeline (the procs "
                 "receive no AsOfUtc). An earlier cutoff therefore yields identical output "

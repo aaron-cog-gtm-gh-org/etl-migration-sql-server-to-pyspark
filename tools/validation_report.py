@@ -3,11 +3,6 @@
 log, the reconcile contract and the pytest junit XML.
 
     python tools/validation_report.py [--report <report>] [--embed-video]
-
---report defaults to daily_production and reproduces the original KAN-6
-page. For other reports the log's `report_meta` block supplies the ticket,
-pipeline, table, parity notes and earlier-cutoff expectation; without it
-the KAN-6 text is used as fallback.
 """
 import argparse
 import base64
@@ -39,6 +34,53 @@ LAKE_TYPE = {"CHAR(5)": "string", "VARCHAR(12)": "string", "VARCHAR(10)": "strin
              "DATE": "date32[day]", "INT": "int32", "DECIMAL(9,2)": "decimal128(9, 2)"}
 
 
+def lake_type(typ):
+    """SQL Server DDL type -> expected arrow/parquet type string."""
+    t = typ.replace(" ", "")
+    if t in LAKE_TYPE:
+        return LAKE_TYPE[t]
+    if re.match(r"(CHAR|VARCHAR)\(\d+\)$", t):
+        return "string"
+    if t == "BIT":
+        return "bool"
+    if t == "DATE":
+        return "date32[day]"
+    if t == "INT":
+        return "int32"
+    m = re.match(r"DECIMAL\((\d+),(\d+)\)$", t)
+    if m:
+        return f"decimal128({m.group(1)}, {m.group(2)})"
+    if re.match(r"DATETIME2\(\d+\)$", t):
+        return "timestamp[us]"
+    return "?"
+
+
+# Report-specific text for daily_production, used when the fuzz JSON log
+# carries no "report_meta" block (pre-generalisation logs).
+DAILY_PRODUCTION_META = {
+    "ticket": "KAN-6",
+    "pipeline": "PL_Daily_Production",
+    "fuzz_input": "mes.production_count",
+    "bcp_note": "ORDER BY key, NULL = empty, 2-dp decimals",
+    "oracle_note_html": "<code>oracle_values</code> / <code>production_day_local_rule</code> compare "
+                        "every output row against an independent pure-Python implementation of the "
+                        "legacy procs (zoneinfo, Decimal half-away-from-zero).",
+    "as_of_header": "as_of_utc (ignored)",
+    "earlier_cutoff_label": "earlier cutoff {as_of_utc} (as-of not applied)",
+    "earlier_cutoff_detail": "identical={identical_to_canonical}, reconcile exit "
+                             "{reconcile_exit_code}; KAN-6 AC4 expects a FAIL here (see deviations)",
+    "parity_notes_html": [
+        "<b>Earlier cutoff (KAN-6 AC4).</b> <code>--as-of-utc</code> is accepted and not applied, as in the legacy pipeline (PL_Master never passes AsOfUtc to the procs; the window is <code>MIN(dim.calendar)</code> + <code>WindowDays</code>). An earlier cutoff therefore yields identical output and reconcile passes. Meeting AC4's \"earlier cutoff fails\" would require a deliberate deviation from legacy, and filtering on <code>bucket_start_utc &lt; AsOfUtc</code> would also break parity, because the extract includes 2025-11-16 production-day buckets after 2025-11-17 00:00 UTC.",
+        "<b>Canonical seed edge cases.</b> The extract is fixed, so the canonical seed can only carry edge cases that don't change its totals: zero-total buckets, a whole zero-total day (PLT06-L4, 2025-11-04, <code>yield_pct</code> NULL), 75-minute fall-back buckets, and <code>SKU-XX99</code> rows (dropped). Buckets that straddle 06:00 or a shift edge, spring-forward days, NULLs and duplicates are covered by the unit tests and the fuzz variants instead.",
+        "<b>No seed tuning was needed.</b> The pre-existing seed already reproduces the extract exactly. The seed was not fitted to the snapshot.",
+        "<b>Line terminator.</b> MANIFEST shows <code>bcp -r\\n</code>, but the committed extract uses CRLF. The byte-compare renders CRLF.",
+        "<b>NULL counts</b> (impossible in legacy because the columns are NOT NULL) are dropped and counted, not failed. <b>INT overflow</b> raises, like SQL Server's arithmetic overflow.",
+        "<b>Ambiguous / gap local times</b> follow java.time / zoneinfo fold=0, the documented AT TIME ZONE behaviour. This was not verified against a live SQL Server, and no current shift bound falls in such a window.",
+        "The ADF JSON in <code>lakehouse/adf/</code> was reviewed, not deployed. Nothing here ran on ADF or Databricks.",
+    ],
+}
+
+
 def badge(ok, yes="PASS", no="FAIL"):
     return f'<span class="b {"ok" if ok else "ko"}">{yes if ok else no}</span>'
 
@@ -60,37 +102,39 @@ def junit(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--report", default="daily_production")
-    a0, _ = ap.parse_known_args()
-    rep = a0.report
-    suffix = "" if rep == "daily_production" else f"_{rep}"
-    ap.add_argument("--log", default=str(VAL / f"fuzz_{rep}.json"))
-    ap.add_argument("--out", default=str(VAL / f"{rep}_validation.html"))
-    ap.add_argument("--video", default=f"fuzz_run{suffix}.mp4")
-    ap.add_argument("--cast", default=f"fuzz_run{suffix}.cast")
+    ap.add_argument("--log", default=None)
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--video", default=None)
+    ap.add_argument("--cast", default=None)
+    ap.add_argument("--junit", default=None)
     ap.add_argument("--embed-video", action="store_true")
     a = ap.parse_args()
-    r = json.loads(Path(a.log).read_text())
-    meta = r.get("report_meta") or {}
-    ticket = meta.get("ticket", "KAN-6")
-    pipeline = meta.get("pipeline", "PL_Daily_Production")
-    table = meta.get("table", "rpt.daily_production")
-    junit_xml = VAL / ("pytest.xml" if rep == "daily_production" else f"pytest_{rep}.xml")
+    report = a.report
+    suffix = "" if report == "daily_production" else f"_{report}"
+    log = a.log or str(VAL / f"fuzz_{report}.json")
+    out = a.out or str(VAL / f"{report}_validation.html")
+    video = a.video or f"fuzz_run{suffix}.mp4"
+    cast = a.cast or f"fuzz_run{suffix}.cast"
+    junit_path = Path(a.junit) if a.junit else VAL / (
+        "pytest.xml" if report == "daily_production" else f"pytest_{report}.xml")
+    r = json.loads(Path(log).read_text())
     cfg = yaml.safe_load((ROOT / "tools" / "reconcile_config.yaml").read_text())
+    meta = r.get("report_meta") or DAILY_PRODUCTION_META
     env, c, s = r["environment"], r["canonical"], r["summary"]
     bc = c["byte_compare"]
-    tests = junit(junit_xml)
+    tests = junit(junit_path)
     checks = []  # (section, check, ok, detail)
 
     # ---- schema contract
     schema_inv = c["schema"]["schema_contract"]
-    snap_header = (ROOT / "legacy_snapshots" / f"{table}.csv").read_text().splitlines()[0]
+    snap_header = (ROOT / "legacy_snapshots" / f"rpt.{report}.csv").read_text().splitlines()[0]
     rows = []
-    for name, typ, null in ddl_columns(table):
-        exp = LAKE_TYPE.get(typ.replace(" ", ""), "?")
+    for name, typ, null in ddl_columns(f"rpt.{report}"):
+        exp = lake_type(typ)
         in_snap = name in snap_header.split(",")
         rows.append(f"<tr><td>{E(name)}</td><td>{E(typ)} {null}</td><td>{E(exp)}</td>"
                     f"<td>{badge(in_snap, 'yes', 'no')}</td></tr>")
-    checks.append(("Schema", f"parquet columns/types == {table} DDL",
+    checks.append(("Schema", f"parquet columns/types == rpt.{report} DDL",
                    schema_inv["pass"], schema_inv["detail"]))
 
     # ---- reconcile
@@ -108,11 +152,8 @@ def main():
                    c["corrupted_value"]["pass"],
                    f"{c['corrupted_value']['mutation']} -> exit {c['corrupted_value']['reconcile_exit_code']}"))
     ec = c["earlier_cutoff"]
-    ec_note = meta.get("earlier_cutoff_note",
-                       "KAN-6 AC4 expects a FAIL here (see deviations)")
-    checks.append(("Adversarial", f"earlier cutoff {ec['as_of_utc']} (as-of not applied)",
-                   ec["pass"], f"identical={ec['identical_to_canonical']}, reconcile exit "
-                   f"{ec['reconcile_exit_code']}; {ec_note}"))
+    checks.append(("Adversarial", meta["earlier_cutoff_label"].format(**ec),
+                   ec["pass"], meta["earlier_cutoff_detail"].format(**ec)))
     for name, inv in c["schema"].items():
         if not name.startswith("_") and name != "schema_contract":
             checks.append(("Canonical invariants", name, inv["pass"], inv["detail"]))
@@ -140,10 +181,10 @@ def main():
                        ", ".join(v["violations"]) or f"{len(v['invariants'])} invariants hold"))
     inv_names = sorted({k for v in r["variants"] for k in v["invariants"]})
 
-    if a.embed_video and (VAL / a.video).exists():
-        src = "data:video/mp4;base64," + base64.b64encode((VAL / a.video).read_bytes()).decode()
+    if a.embed_video and (VAL / video).exists():
+        src = "data:video/mp4;base64," + base64.b64encode((VAL / video).read_bytes()).decode()
     else:
-        src = a.video
+        src = video
     n_ok = sum(1 for *_, ok, _ in checks if ok)
     all_rows = "".join(
         f"<tr class='{'' if ok else 'bad'}'><td>{i}</td><td>{E(sec)}</td><td>{E(name)}</td>"
@@ -153,34 +194,9 @@ def main():
     ctrl_rows = "".join(f"<tr><td>{E(n)}</td><td>{E(d)}</td><td>{badge(p == 'PASS')}</td></tr>"
                         for p, n, d in ctrl)
     overall = s["overall_pass"]
-    if meta.get("fuzz_intro"):
-        fuzz_intro = meta["fuzz_intro"]
-    elif meta:
-        fuzz_intro = (f"{s['variants_total']} variants (fuzz seed {env['fuzz_seed']}). "
-                      "Each variant ran the job in a throwaway namespace and was checked for:\n"
-                      + ", ".join(f"<code>{E(n)}</code>" for n in inv_names)
-                      + ". The oracle invariants compare every output row (and the scrap "
-                      "allocation) against an independent pure-Python port of the legacy procs.")
-    else:
-        fuzz_intro = (f"{s['variants_total']} variants of <code>mes.production_count</code> "
-                      f"(fuzz seed {env['fuzz_seed']}). Each variant ran the job in a "
-                      "throwaway namespace and was checked for:\n"
-                      + ", ".join(f"<code>{E(n)}</code>" for n in inv_names)
-                      + ". <code>oracle_values</code> / <code>production_day_local_rule</code> "
-                      "compare every output row against an independent pure-Python "
-                      "implementation of the legacy procs (zoneinfo, Decimal "
-                      "half-away-from-zero).")
-    parity_lis = "".join(f"<li>{n}</li>" for n in meta.get("parity_notes", [])) or """
-<li><b>Earlier cutoff (KAN-6 AC4).</b> <code>--as-of-utc</code> is accepted and not applied, as in the legacy pipeline (PL_Master never passes AsOfUtc to the procs; the window is <code>MIN(dim.calendar)</code> + <code>WindowDays</code>). An earlier cutoff therefore yields identical output and reconcile passes. Meeting AC4's "earlier cutoff fails" would require a deliberate deviation from legacy, and filtering on <code>bucket_start_utc &lt; AsOfUtc</code> would also break parity, because the extract includes 2025-11-16 production-day buckets after 2025-11-17 00:00 UTC.</li>
-<li><b>Canonical seed edge cases.</b> The extract is fixed, so the canonical seed can only carry edge cases that don't change its totals: zero-total buckets, a whole zero-total day (PLT06-L4, 2025-11-04, <code>yield_pct</code> NULL), 75-minute fall-back buckets, and <code>SKU-XX99</code> rows (dropped). Buckets that straddle 06:00 or a shift edge, spring-forward days, NULLs and duplicates are covered by the unit tests and the fuzz variants instead.</li>
-<li><b>No seed tuning was needed.</b> The pre-existing seed already reproduces the extract exactly. The seed was not fitted to the snapshot.</li>
-<li><b>Line terminator.</b> MANIFEST shows <code>bcp -r\\n</code>, but the committed extract uses CRLF. The byte-compare renders CRLF.</li>
-<li><b>NULL counts</b> (impossible in legacy because the columns are NOT NULL) are dropped and counted, not failed. <b>INT overflow</b> raises, like SQL Server's arithmetic overflow.</li>
-<li><b>Ambiguous / gap local times</b> follow java.time / zoneinfo fold=0, the documented AT TIME ZONE behaviour. This was not verified against a live SQL Server, and no current shift bound falls in such a window.</li>
-<li>The ADF JSON in <code>lakehouse/adf/</code> was reviewed, not deployed. Nothing here ran on ADF or Databricks.</li>"""
 
     doc = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>{E(rep)} validation — {E(ticket)}</title>
+<title>{report} validation — {E(meta['ticket'])}</title>
 <style>
 :root{{--ok:#1f7a4d;--ko:#b3261e;--ink:#1d2433;--mute:#5b6577;--line:#e3e6ec;--bg:#f7f8fa}}
 *{{box-sizing:border-box}}body{{margin:0;font:14px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}}
@@ -203,8 +219,8 @@ video{{width:100%;border-radius:8px;border:1px solid var(--line);background:#000
 input{{padding:6px 9px;border:1px solid var(--line);border-radius:6px;width:320px;margin-bottom:8px}}
 ul li{{margin:4px 0}}
 </style></head><body><main>
-<h1>{E(pipeline)} → <code>mfg_lake.jobs.{E(rep)}</code> — validation</h1>
-<p class="sub">{E(ticket)} · report <code>{E(rep)}</code> vs <code>legacy_snapshots/{E(table)}.csv</code> ·
+<h1>{E(meta['pipeline'])} → <code>mfg_lake.jobs.{E(report)}</code> — validation</h1>
+<p class="sub">{E(meta['ticket'])} · report <code>{E(report)}</code> vs <code>legacy_snapshots/rpt.{E(report)}.csv</code> ·
 AS_OF_UTC <code>{E(env['as_of_utc'])}</code> · commit <code>{E(env['git_commit'][:10])}</code> · generated {E(env['started_utc'])} UTC</p>
 <div class="banner {'ok' if overall else 'ko'}">{'ALL VALIDATION PASSED' if overall else 'VALIDATION FAILED'} — {n_ok}/{len(checks)} checks pass</div>
 <div class="cards">
@@ -219,37 +235,39 @@ AS_OF_UTC <code>{E(env['as_of_utc'])}</code> · commit <code>{E(env['git_commit'
 
 <h2>Recorded run</h2>
 <p>Terminal recording of <code>tools/run_validation.sh</code>: seed, run, reconcile, pytest, <code>make ci</code>, fuzz.
-Video: <a href="{E(a.video)}">{E(a.video)}</a> · asciinema cast: <a href="{E(a.cast)}">{E(a.cast)}</a> (<code>asciinema play {E(a.cast)}</code>)</p>
+Video: <a href="{E(video)}">{E(video)}</a> · asciinema cast: <a href="{E(cast)}">{E(cast)}</a> (<code>asciinema play {E(cast)}</code>)</p>
 <video controls preload="metadata" src="{src}"></video>
 
-<h2>1 · Schema / column contract vs <code>{E(table)}</code></h2>
+<h2>1 · Schema / column contract vs <code>rpt.{E(report)}</code></h2>
 <table><tr><th>column</th><th>legacy DDL (legacy/sql/schema/rpt.sql)</th><th>expected lake parquet type</th><th>in snapshot header</th></tr>{''.join(rows)}</table>
 <p>Lake parquet schema check: {badge(schema_inv['pass'])} {E(schema_inv['detail'])}</p>
 
 <h2>2 · Reconcile diff summary (canonical seed)</h2>
-<p><code>tools/reconcile.py --report {E(rep)}</code>: keys <code>{E(', '.join(cfg['reports'][rep]['keys']))}</code>,
+<p><code>tools/reconcile.py --report {E(report)}</code>: keys <code>{E(', '.join(cfg['reports'][report]['keys']))}</code>,
 numeric tolerance <code>{cfg['numeric_tolerance']}</code> (absolute).
-Byte-compare renders the lake output in the MANIFEST bcp format (ORDER BY key, NULL = empty, 2-dp decimals) with the extract's <code>{E(bc['line_terminator'])}</code> row terminator.
+Byte-compare renders the lake output in the MANIFEST bcp format ({E(meta['bcp_note'])}) with the extract's <code>{E(bc['line_terminator'])}</code> row terminator.
 Snapshot {bc['snapshot_bytes']} bytes, sha256 <code>{E(bc['snapshot_sha256'])}</code>; lake CSV {bc['lake_bytes']} bytes, sha256 <code>{E(bc['lake_csv_sha256'])}</code>.</p>
 <table><tr><th>control</th><th>detail</th><th>result</th></tr>{ctrl_rows}</table>
 
 <h2>3 · Fuzz variants</h2>
-<p>{fuzz_intro}</p>
-<div class="scroll"><table><tr><th>#</th><th>rng seed</th><th>calendar</th><th>as_of_utc (ignored)</th><th>rows in</th><th>NULL rows</th><th>rows out</th><th>edge cases generated</th><th>result</th><th>invariant violated</th></tr>{''.join(vrows)}</table></div>
+<p>{s['variants_total']} variants of <code>{E(meta['fuzz_input'])}</code> (fuzz seed {env['fuzz_seed']}). Each variant ran the job in a throwaway namespace and was checked for:
+{', '.join(f'<code>{E(n)}</code>' for n in inv_names)}. {meta['oracle_note_html']}</p>
+<div class="scroll"><table><tr><th>#</th><th>rng seed</th><th>calendar</th><th>{E(meta['as_of_header'])}</th><th>rows in</th><th>NULL rows</th><th>rows out</th><th>edge cases generated</th><th>result</th><th>invariant violated</th></tr>{''.join(vrows)}</table></div>
 
 <h2>4 · Every check performed</h2>
 <input id="q" placeholder="filter checks…" oninput="for(const r of document.querySelectorAll('#all tr+tr'))r.style.display=r.textContent.toLowerCase().includes(this.value.toLowerCase())?'':'none'">
 <div class="scroll"><table id="all"><tr><th>#</th><th>section</th><th>check</th><th>result</th><th>detail</th></tr>{all_rows}</table></div>
 
 <h2>5 · Parity notes and deviations</h2>
-<ul>{parity_lis}
+<ul>
+{chr(10).join(f'<li>{n}</li>' for n in meta['parity_notes_html'])}
 </ul>
 
 <h2>6 · Environment</h2>
 <table>{env_rows}</table>
 </main></body></html>"""
-    Path(a.out).write_text(doc)
-    print(f"wrote {a.out} ({len(doc) // 1024} KiB, {n_ok}/{len(checks)} checks pass)")
+    Path(out).write_text(doc)
+    print(f"wrote {out} ({len(doc) // 1024} KiB, {n_ok}/{len(checks)} checks pass)")
 
 
 if __name__ == "__main__":
