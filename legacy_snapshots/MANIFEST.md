@@ -5,7 +5,7 @@ These are the golden outputs the ADLS migration is validated against.
 
 | | |
 |---|---|
-| Source server | `NWH-MESRPT-SQL01` (prod, SQL Server 2022 CU14) |
+| Source server | `KC-MESRPT-SQL01` (prod, SQL Server 2022 CU14) |
 | Database | `MES_Reporting` |
 | Export date | 2025-11-17 |
 | Exported by | ETL shared service (`svc_etl_batch`), nightly `PL_Master` run of 2025-11-17 with `AsOfUtc = 2025-11-17 00:00:00`, `WindowDays = 28` |
@@ -15,7 +15,7 @@ Export command shape (per table):
 
 ```bat
 bcp "SELECT * FROM rpt.<table> ORDER BY <key>" queryout <table>.csv ^
-    -S NWH-MESRPT-SQL01 -d MES_Reporting -c -t, -r\n -T
+    -S KC-MESRPT-SQL01 -d MES_Reporting -c -t, -r\n -T
 ```
 
 Files:

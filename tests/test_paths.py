@@ -3,7 +3,7 @@ from mfg_lake.common import paths
 
 def test_abfss_uri_contract():
     assert paths.abfss_uri("daily_production") == (
-        "abfss://curated@nwhmfglake.dfs.core.windows.net/"
+        "abfss://curated@kcmfglake.dfs.core.windows.net/"
         "manufacturing/daily_production")
 
 

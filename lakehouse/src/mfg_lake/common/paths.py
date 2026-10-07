@@ -1,7 +1,7 @@
 """Lake path resolution.
 
 The ADF estate writes curated output to
-    abfss://curated@nwhmfglake.dfs.core.windows.net/manufacturing/<report>
+    abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/<report>
 That abfss URI is the contract a converted job must write to. Locally it
 resolves to $LAKE_ROOT/<ns>/curated/<report> (default lake root ./out).
 
@@ -13,7 +13,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 LAKE_ROOT = Path(os.environ.get("LAKE_ROOT", REPO_ROOT / "out"))
 
-_ACCOUNT = "nwhmfglake"
+_ACCOUNT = "kcmfglake"
 _CONTAINER = "curated"
 _PREFIX = "manufacturing"
 

@@ -2,7 +2,7 @@
 """Deterministic synthetic MES seed -> data/raw/*.csv
 
 Regenerated identically with a fixed seed. Emulates the raw feeds that land
-in the mes.* staging tables for Northwind Hygiene Products.
+in the mes.* staging tables for Kimberly-Clark.
 
 Usage: python tools/seed.py
 """

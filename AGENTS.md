@@ -47,7 +47,7 @@ test suite plus run+reconcile for every job present in
 `lakehouse/src/mfg_lake/jobs/`.
 
 Local lake root defaults to `./out/<NS>`; `lakehouse/src/mfg_lake/common/paths.py` resolves
-the `abfss://curated@nwhmfglake.dfs.core.windows.net/manufacturing/<report>`
+the `abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/<report>`
 contract path to a local directory via `$LAKE_ROOT`.
 
 ## CI

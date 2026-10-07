@@ -3,12 +3,12 @@
   "properties": {
     "type": "SqlServer",
     "typeProperties": {
-      "connectionString": "Server=messql.plantnet.nwh.local,1433;Database=MESDB;Encrypt=optional",
+      "connectionString": "Server=messql.plantnet.kc.local,1433;Database=MESDB;Encrypt=optional",
       "authenticationType": "SQL",
       "userName": "svc_adf_mes",
       "password": {
         "type": "AzureKeyVaultSecret",
-        "store": { "referenceName": "LS_AKV_NWH", "type": "LinkedServiceReference" },
+        "store": { "referenceName": "LS_AKV_KC", "type": "LinkedServiceReference" },
         "secretName": "mes-sql-svc-password"
       }
     },

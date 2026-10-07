@@ -1,6 +1,6 @@
 # mfg-analytics-etl
 
-MES reporting estate for **Northwind Hygiene Products**.
+MES reporting estate for **Kimberly-Clark**.
 
 Legacy stack: SQL Server stored procedures orchestrated by Azure Data
 Factory (`legacy/`). Reporting tables live in the `rpt` schema; staging
