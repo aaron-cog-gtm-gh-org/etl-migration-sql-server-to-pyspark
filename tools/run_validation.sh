@@ -10,6 +10,7 @@ case "$REPORT" in
   daily_production)    TICKET=KAN-6 ;;
   line_downtime_daily) TICKET=KAN-8 ;;
   scrap_yield_weekly)  TICKET=KAN-9 ;;
+  oee_shift)           TICKET=KAN-7 ;;
   *)                   TICKET=migration ;;
 esac
 if [ "$REPORT" = daily_production ]; then JUNIT=out/validation/pytest.xml
