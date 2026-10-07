@@ -6,7 +6,13 @@
     "table": "rpt.scrap_yield_weekly",
     "earlier_cutoff_expect": "identical",
     "earlier_cutoff_note": "KAN-9 AC4 expects a FAIL here; not met by design (user-approved): the legacy procs never receive AsOfUtc, so identical output is the parity result - see deviations",
-    "parity_notes": [
+    "fuzz_input": "mes.scrap_event / mes.production_count / mes.production_order",
+    "bcp_note": "ORDER BY key, NULL = empty, 2-dp decimals",
+    "oracle_note_html": "<code>oracle_keys</code> / <code>oracle_values</code> compare every output row, and <code>alloc_matches_cursor_port</code> every allocation row, against an independent pure-Python port of the legacy procs (<code>tools/oracle_scrap_yield_weekly.py</code>: literal cursor allocation, Decimal half-away-from-zero, the SQL Server ISO-year trick).",
+    "as_of_header": "as_of_utc (ignored)",
+    "earlier_cutoff_label": "earlier cutoff {as_of_utc} (as-of not applied)",
+    "earlier_cutoff_detail": "identical={identical_to_canonical}, reconcile exit {reconcile_exit_code}; KAN-9 AC4 expects a FAIL here, not met by design (user-approved): the procs never receive AsOfUtc (see deviations)",
+    "parity_notes_html": [
       "<b>Earlier cutoff (KAN-9 AC4).</b> <code>--as-of-utc</code> is accepted, format-validated and not applied, as in the legacy pipeline (the procs receive no AsOfUtc). An earlier cutoff therefore yields identical output and the same reconcile result; AC4's \"earlier cutoff fails\" is not met by design (user-approved).",
       "<b>UTC vs local ISO week.</b> Scrap is bucketed by the ISO week of the <b>UTC</b> <code>scrap_ts_utc</code>; good units by the ISO week of the local <code>production_day</code>. A local-week port mismatches 33/96 rows.",
       "<b>No <code>dim.sku</code> join.</b> <code>stg.production_local</code> is summed as-is, so unknown-SKU buckets count toward <code>good_units</code>. The two <code>SKU-XX99</code> seed rows now carry 0 units (user-approved seed fix) so the snapshot stays unchanged.",
@@ -33,8 +39,8 @@
     "fuzz_seed": 20251117,
     "variants": 25,
     "seed_py_SEED": 20251020,
-    "git_commit": "d8dcf3659752f4428b80f5dbac0415f6b2937da4",
-    "started_utc": "2026-10-07 02:55:31"
+    "git_commit": "4b6cbc0d95393646856aaad3675dfdb2f9cfccbc",
+    "started_utc": "2026-10-07 03:09:37"
   },
   "canonical": {
     "reconcile": {
@@ -265,7 +271,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 12.37
+      "seconds": 11.46
     },
     {
       "variant": 1,
@@ -354,7 +360,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 5.19
+      "seconds": 5.14
     },
     {
       "variant": 2,
@@ -444,7 +450,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.82
+      "seconds": 4.84
     },
     {
       "variant": 3,
@@ -534,7 +540,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.3
+      "seconds": 4.27
     },
     {
       "variant": 4,
@@ -623,7 +629,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 5.76
+      "seconds": 5.81
     },
     {
       "variant": 5,
@@ -712,7 +718,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 5.0
+      "seconds": 5.06
     },
     {
       "variant": 6,
@@ -802,7 +808,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 5.12
+      "seconds": 4.99
     },
     {
       "variant": 7,
@@ -892,7 +898,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.07
+      "seconds": 4.15
     },
     {
       "variant": 8,
@@ -981,7 +987,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.27
+      "seconds": 4.05
     },
     {
       "variant": 9,
@@ -1070,7 +1076,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.38
+      "seconds": 4.45
     },
     {
       "variant": 10,
@@ -1160,7 +1166,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.28
+      "seconds": 4.24
     },
     {
       "variant": 11,
@@ -1250,7 +1256,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 5.13
+      "seconds": 5.15
     },
     {
       "variant": 12,
@@ -1339,7 +1345,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.11
+      "seconds": 4.15
     },
     {
       "variant": 13,
@@ -1428,7 +1434,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 3.8
+      "seconds": 3.83
     },
     {
       "variant": 14,
@@ -1518,7 +1524,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 5.23
+      "seconds": 5.31
     },
     {
       "variant": 15,
@@ -1608,7 +1614,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 5.54
+      "seconds": 5.62
     },
     {
       "variant": 16,
@@ -1786,7 +1792,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 5.39
+      "seconds": 5.5
     },
     {
       "variant": 18,
@@ -1876,7 +1882,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.14
+      "seconds": 4.15
     },
     {
       "variant": 19,
@@ -1966,7 +1972,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 3.85
+      "seconds": 3.97
     },
     {
       "variant": 20,
@@ -2055,7 +2061,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.56
+      "seconds": 4.58
     },
     {
       "variant": 21,
@@ -2144,7 +2150,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 5.0
+      "seconds": 5.05
     },
     {
       "variant": 22,
@@ -2324,7 +2330,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.93
+      "seconds": 4.91
     },
     {
       "variant": 24,
@@ -2413,7 +2419,7 @@
       },
       "pass": true,
       "violations": [],
-      "seconds": 4.21
+      "seconds": 4.32
     }
   ],
   "summary": {
@@ -2425,7 +2431,7 @@
     "earlier_cutoff_identical": true,
     "corrupted_value_detected": true,
     "checker_mutants_caught": "8/8",
-    "seconds": 150.6,
+    "seconds": 149.6,
     "overall_pass": true
   }
 }

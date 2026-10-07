@@ -117,7 +117,7 @@ week that has any staged production. Output columns:
 ## Validation
 
 Recorded run: `tools/run_validation.sh kan9-validation 25 scrap_yield_weekly`
-at `d8dcf36` (stacked on PR #5 incl. `419b220`), rendered with
+at `4b6cbc0` (stacked on PR #5 incl. `419b220`), rendered with
 `tools/validation_report.py --report scrap_yield_weekly --embed-video`
 (156/156 checks pass).
 
