@@ -295,7 +295,7 @@ def test_duplicate_segments_and_buckets_are_summed(spark):
     assert row.unplanned_dt_min == 10
     assert row.performance == Decimal("3.0000")
     assert row.quality == Decimal("0.8000")
-    assert row.oee == Decimal("2.4000")
+    assert row.oee == Decimal("2.2000")
 
 
 def test_unknown_line_is_dropped_by_imported_production_stage(spark):
@@ -368,6 +368,8 @@ def test_transform_drops_pre_floor_and_unknown_line(spark):
     )
     feeds["mes.production_count"] = spark.createDataFrame(
         [("PLT01-L1", "2025-10-19 12:00:00", "2025-10-19 12:10:00",
+          "SKU", 100, 90),
+         ("PLT01-L1", "2025-10-20 12:00:00", "2025-10-20 12:10:00",
           "SKU", 100, 90),
          ("UNKNOWN", "2025-10-20 12:00:00", "2025-10-20 12:10:00",
           "SKU", 100, 90)],

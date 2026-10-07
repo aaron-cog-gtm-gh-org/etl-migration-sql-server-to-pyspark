@@ -81,7 +81,7 @@ The cutoff is applied only by the imported downtime staging function.
 | OEE inner-joins `planned_time` to production on the full four-part grain | planned-only and production-only groups are both dropped | `test_planned_time_and_production_inner_join` |
 | Calendar-to-segment join is a left join; absent sums use `ISNULL(...,0)` | left join segments and coalesce both downtime sums to zero | `test_shift_without_segments_has_zero_downtime` |
 | Duplicate segment rows and production buckets participate repeatedly in `SUM`; no deduplication | do not distinct either input | `test_duplicate_segments_and_buckets_are_summed` |
-| Unknown line / plant / SKU keys fail the legacy inner join | preserve the imported stage and report inner joins | `test_unknown_line_and_sku_are_dropped` |
+| Unknown line / plant / SKU keys fail the legacy inner join | preserve the imported stage and report inner joins | `test_unknown_line_is_dropped_by_imported_production_stage`, `test_unknown_sku_is_dropped` |
 | SQL `SUM(INT)` and insertion into `INT` overflow with an error | aggregate in long, check signed 32-bit bounds, then cast | `test_integer_overflow_raises` |
 
 ## `AsOfUtc`
