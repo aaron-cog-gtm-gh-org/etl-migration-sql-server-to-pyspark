@@ -3,7 +3,7 @@
 #   tools/run_validation.sh [NS] [FUZZ_N]
 set -euo pipefail
 cd "$(dirname "$0")/.."
-NS=${1:-validation}
+NS=${1:-kan6-validation}
 N=${2:-25}
 step() { printf '\n\033[1;36m$ %s\033[0m\n' "$*"; "$@"; }
 quiet() { grep -v -E 'WARN|setLogLevel|NativeCodeLoader|^Setting default log level' || true; }
