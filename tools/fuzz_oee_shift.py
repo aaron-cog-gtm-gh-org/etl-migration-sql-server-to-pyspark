@@ -80,16 +80,16 @@ REPORT_META = {
         "{reconcile_exit_code}; derived from the legacy data flow"
     ),
     "parity_notes_html": [
-        "<b>AsOfUtc.</b> The OEE procedures do not receive the cutoff directly. "
-        "The imported KAN-8 <code>stage_downtime_local</code> applies it to "
-        "<code>start_utc</code> and caps open events; the resulting OEE differs "
-        "at the early cutoff, so reconcile is expected to fail.",
-        "<b>Legacy minutes.</b> <code>planned_min</code> is the UTC shift length; "
-        "downtime segment minutes use local wall-clock bounds. Planned downtime "
-        "does not reduce <code>planned_min</code>.",
-        "<b>Exact metrics.</b> The oracle checks half-away rounding of the exact "
-        "rational ratios, including OEE rounded once from the full product.",
-        "The ADF JSON was reviewed, not deployed. Nothing here ran on ADF or Databricks.",
+        "<b>AsOfUtc: discrepancy with the playbook table.</b> Neither OEE proc receives AsOfUtc, and the job adds no cutoff filter. <code>as_of_utc</code> goes only into the imported KAN-8 <code>stage_downtime_local</code> (<code>start_utc &lt; AsOfUtc</code>, open events capped), which feeds <code>stg.downtime_shift_seg</code> → <code>mes.usp_calc_planned_time</code>. An earlier cutoff therefore changes OEE (2025-11-10: 92 values; 2025-11-16 12:00: 9; 2025-11-20: 7; 2025-11-17 00:00:01: 0), and the expected earlier-cutoff outcome is reconcile FAIL. The playbook's AsOfUtc table lists PL_OEE as IDENTICAL, which is wrong for this pipeline.",
+        "<b>Ticket behaviour not met, by design.</b> KAN-7 says \"planned minutes = shift length minus PLANNED downtime\". Legacy computes <code>planned_dt_min</code> but never uses it: <code>planned_min = shift_minutes</code> (DATEDIFF on UTC bounds; 540/780 on fall-back nights), and availability = (shift − unplanned) / shift. The extract agrees: PLT02-L1 2025-10-30 S1 has 90 planned downtime minutes, <code>planned_min=480</code>, <code>availability=1.0000</code>.",
+        "<b>Rounding.</b> The extract matches each metric's exact ratio rounded once to 4 dp, half away from zero, with OEE = (s−u)·G / (s·I) and a NULLIF guard on total units. A chain of Spark decimal divisions gives 4 diffs, and multiplying rounded components also differs (PLT03-L1 2025-10-23 S3: 0.8655 vs 0.8654). The job uses exact DECIMAL(38,0) integer arithmetic.",
+        "<b>Downtime minutes</b> use DATEDIFF(MINUTE) on local segment bounds via KAN-8's <code>datediff_minute</code>. The hard-coded <code>production_day &gt;= '2025-10-20'</code> filter is kept.",
+        "<b>Canonical seed edge cases.</b> PLT06-L4 2025-11-04 (zero-total day) gives NULL quality and oee and performance 0.0000. <code>SKU-XX99</code> buckets are dropped by the <code>dim.sku</code> inner join. Spring-forward days, boundary straddles, duplicates, unknown keys, open events and pre-floor rows are covered by the unit tests and the fuzz variants.",
+        "<b>No seed tuning was needed.</b> The existing seed reproduces the extract byte-for-byte. The seed was not fitted to the snapshot.",
+        "<b>Line terminator.</b> MANIFEST shows <code>bcp -r\\n</code>, but the committed extract uses CRLF. The byte-compare renders CRLF.",
+        "<b>NULLs in NOT NULL source columns</b> (impossible in legacy) are dropped and counted by the imported stages. <b>INT / DECIMAL overflow</b> raises, like SQL Server.",
+        "<b>Ambiguous / gap local times</b> follow java.time / zoneinfo fold=0 (the documented AT TIME ZONE behaviour). This was not verified against a live SQL Server.",
+        "The ADF JSON in <code>lakehouse/adf/</code> was reviewed, not deployed. Nothing here ran on ADF or Databricks.",
     ],
 }
 
@@ -696,9 +696,11 @@ def canonical_checks(job, spark, tag):
     return out
 
 
-def env_info(spark, seed, variant_count):
+def env_info(spark, seed, variant_count, started_utc):
     import pyspark
+    import pandas as pd
 
+    jvm = spark.sparkContext._jvm
     git = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=ROOT,
@@ -710,13 +712,19 @@ def env_info(spark, seed, variant_count):
         "python": platform.python_version(),
         "pyspark": pyspark.__version__,
         "spark": spark.version,
+        "java": jvm.System.getProperty("java.version"),
+        "jvm_tzdb": str(
+            jvm.java.time.zone.ZoneRulesProvider.getVersions("UTC").lastKey()
+        ),
+        "pandas": pd.__version__,
         "platform": platform.platform(),
         "spark_session_tz": spark.conf.get("spark.sql.session.timeZone"),
         "as_of_utc": CANON_AS_OF,
         "fuzz_seed": seed,
         "variants": variant_count,
+        "seed_py_SEED": 20251020,
         "git_commit": git.stdout.strip(),
-        "started_utc": datetime.now(timezone.utc).strftime(TS),
+        "started_utc": started_utc,
     }
 
 
@@ -732,7 +740,9 @@ def variant_run(job, spark, raw_dir, namespace, as_of):
             os.environ["RAW_DIR"] = previous_raw
 
 
-def fuzz_variant(job, spark, seed, index, raw_workspace, rng):
+def fuzz_variant(job, spark, seed, index, raw_workspace):
+    rng_seed = seed + index
+    rng = random.Random(rng_seed)
     raw_dir = raw_workspace / f"variant-{index:03d}"
     raw_dir.mkdir(parents=True)
     as_of, features, window = make_variant(raw_dir, index, rng)
@@ -750,7 +760,7 @@ def fuzz_variant(job, spark, seed, index, raw_workspace, rng):
     _, events = read_csv(raw_dir / "mes.downtime_event.csv")
     return {
         "variant": index,
-        "rng_seed": seed + index,
+        "rng_seed": rng_seed,
         "calendar_window": window,
         "as_of_utc": as_of,
         "pass": not violations,
@@ -778,6 +788,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    started_utc = datetime.now(timezone.utc).strftime(TS)
     args = parse_args(argv)
     tag = str(args.seed)
     raw_workspace = ROOT / "out" / f"fuzz-{tag}-raw"
@@ -806,10 +817,9 @@ def main(argv=None):
     results = []
     try:
         canonical = canonical_checks(job, spark, tag)
-        rng = random.Random(args.seed)
         for index in range(args.n):
             result = fuzz_variant(
-                job, spark, args.seed, index, raw_workspace, rng
+                job, spark, args.seed, index, raw_workspace
             )
             results.append(result)
             print(
@@ -832,7 +842,7 @@ def main(argv=None):
         overall = canonical_pass and checker_pass and all(item["pass"] for item in results)
         report = {
             "report_meta": REPORT_META,
-            "environment": env_info(spark, args.seed, args.n),
+            "environment": env_info(spark, args.seed, args.n, started_utc),
             "canonical": canonical,
             "checker_self_test": checker_results,
             "variants": results,
@@ -842,7 +852,10 @@ def main(argv=None):
                 "variants_passed": sum(item["pass"] for item in results),
                 "variants_failed": sum(not item["pass"] for item in results),
                 "checker_mutants_total": len(checker_results),
-                "checker_mutants_caught": sum(item["caught"] for item in checker_results.values()),
+                "checker_mutants_caught": (
+                    f"{sum(item['caught'] for item in checker_results.values())}"
+                    f"/{len(checker_results)}"
+                ),
             },
         }
         log_path.write_text(json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8")
