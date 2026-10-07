@@ -1,0 +1,26 @@
+{
+  "name": "PL_Scrap_Yield",
+  "properties": {
+    "description": "Converted (KAN-9): mes.usp_allocate_scrap_to_orders + rpt.usp_rpt_scrap_yield_weekly + the Copy to curated are replaced by one Spark job (mfg_lake.jobs.scrap_yield_weekly). The job builds the shift calendar itself, recomputes the scrap allocation in-flight for parity/logging (stg.scrap_alloc does not feed the report), and writes snappy Parquet to abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/scrap_yield_weekly — the same location DS_ADLS_Curated_Parquet (report=scrap_yield_weekly) resolved to.",
+    "parameters": { "AsOfUtc": { "type": "string" } },
+    "activities": [
+      {
+        "name": "SPK_ScrapYieldWeekly",
+        "type": "DatabricksSparkPython",
+        "typeProperties": {
+          "pythonFile": "dbfs:/jobs/mfg_lake/jobs/scrap_yield_weekly.py",
+          "parameters": ["--ns", "prod",
+                         "--as-of-utc", "@pipeline().parameters.AsOfUtc"],
+          "libraries": [{ "pypi": { "package": "pyspark==3.5.3" } }]
+        },
+        "linkedServiceName": { "referenceName": "LS_Databricks_Mfg", "type": "LinkedServiceReference" },
+        "policy": { "timeout": "0.12:00:00", "retry": 1, "retryIntervalInSeconds": 30 },
+        "userProperties": [
+          { "name": "sink", "value": "abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/scrap_yield_weekly" },
+          { "name": "sinkFormat", "value": "parquet (snappy), overwrite" },
+          { "name": "legacyActivities", "value": "SP_AllocateScrapToOrders, SP_RptScrapYieldWeekly, COPY_rpt_scrap_yield_weekly_to_curated" }
+        ]
+      }
+    ]
+  }
+}

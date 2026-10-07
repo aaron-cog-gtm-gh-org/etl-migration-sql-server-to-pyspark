@@ -1,0 +1,2437 @@
+{
+  "tool": "tools/fuzz_scrap_yield_weekly.py",
+  "report_meta": {
+    "ticket": "KAN-9",
+    "pipeline": "PL_Scrap_Yield",
+    "table": "rpt.scrap_yield_weekly",
+    "earlier_cutoff_expect": "identical",
+    "earlier_cutoff_note": "KAN-9 AC4 expects a FAIL here; not met by design (user-approved): the legacy procs never receive AsOfUtc, so identical output is the parity result - see deviations",
+    "fuzz_input": "mes.scrap_event / mes.production_count / mes.production_order",
+    "bcp_note": "ORDER BY key, NULL = empty, 2-dp decimals",
+    "oracle_note_html": "<code>oracle_keys</code> / <code>oracle_values</code> compare every output row, and <code>alloc_matches_cursor_port</code> every allocation row, against an independent pure-Python port of the legacy procs (<code>tools/oracle_scrap_yield_weekly.py</code>: literal cursor allocation, Decimal half-away-from-zero, the SQL Server ISO-year trick).",
+    "as_of_header": "as_of_utc (ignored)",
+    "earlier_cutoff_label": "earlier cutoff {as_of_utc} (as-of not applied)",
+    "earlier_cutoff_detail": "identical={identical_to_canonical}, reconcile exit {reconcile_exit_code}; KAN-9 AC4 expects a FAIL here, not met by design (user-approved): the procs never receive AsOfUtc (see deviations)",
+    "parity_notes_html": [
+      "<b>Earlier cutoff (KAN-9 AC4).</b> <code>--as-of-utc</code> is accepted, format-validated and not applied, as in the legacy pipeline (the procs receive no AsOfUtc). An earlier cutoff therefore yields identical output and the same reconcile result; AC4's \"earlier cutoff fails\" is not met by design (user-approved).",
+      "<b>UTC vs local ISO week.</b> Scrap is bucketed by the ISO week of the <b>UTC</b> <code>scrap_ts_utc</code>; good units by the ISO week of the local <code>production_day</code>. A local-week port mismatches 33/96 rows.",
+      "<b>No <code>dim.sku</code> join.</b> <code>stg.production_local</code> is summed as-is, so unknown-SKU buckets count toward <code>good_units</code>. The two <code>SKU-XX99</code> seed rows now carry 0 units (user-approved seed fix) so the snapshot stays unchanged.",
+      "<b><code>stg.scrap_alloc</code> is not persisted.</b> The rpt proc reads <code>mes.scrap_event</code> directly; the allocation is recomputed in the job for parity/logging only and is checked against a literal cursor port (<code>alloc_matches_cursor_port</code>).",
+      "<b>Alloc semantics.</b> <code>ts BETWEEN start AND end</code> is inclusive; overlap is clipped to the &plusmn;7200s window; the rounding remainder goes to the largest overlap, ties broken by the <code>order_id</code> string; no candidate &rarr; <code>UNALLOCATED</code>.",
+      "<b>NULL inputs</b> (impossible in legacy because the columns are NOT NULL) are dropped and counted, not failed. <b>INT overflow</b> raises, like SQL Server's arithmetic overflow.",
+      "The ADF JSON in <code>lakehouse/adf/</code> was reviewed, not deployed. Nothing here ran on ADF or Databricks.",
+      "<b>&plusmn;7200 in the alloc proc.</b> As written, <code>@ts - 7200</code> / <code>@ts + 7200</code> on a <code>DATETIME2(0)</code> is an operand type clash in SQL Server (the proc would error). It is read as &plusmn;7200 <b>seconds</b>, matching the <code>DATEADD(SECOND, &plusmn;7200, @ts)</code> bounds in the same WHERE clause. Approved deviation. It affects only the allocation, which does not feed the report.",
+      "<b>Line terminator.</b> MANIFEST shows <code>bcp -r\\n</code>, but the committed extract uses CRLF. The byte-compare renders CRLF.",
+      "<b>Coverage gaps.</b> <code>stg.scrap_alloc</code> has no prod extract, so it is checked against the literal cursor port only, not prod. The <code>order_id</code> tie-break uses binary string order, while legacy uses the server collation; they agree for the upper-case/numeric ids in the data.",
+      "<b>Local path.</b> AC1 gives the local path as <code>out/&lt;ns&gt;/curated/scrap_yield_weekly</code>. The shared <code>common/paths.curated_dir</code> (PR #5) maps the abfss URI to <code>out/&lt;ns&gt;/curated/manufacturing/scrap_yield_weekly</code>, and the job uses the shared mapping. The abfss target matches AC1 exactly."
+    ]
+  },
+  "environment": {
+    "python": "3.10.12",
+    "pyspark": "3.5.3",
+    "spark": "3.5.3",
+    "java": "17.0.19",
+    "jvm_tzdb": "2026a",
+    "pandas": "2.3.3",
+    "platform": "Linux-6.8.0-1061-aws-x86_64-with-glibc2.35",
+    "spark_session_tz": "UTC",
+    "as_of_utc": "2025-11-17 00:00:00",
+    "fuzz_seed": 20251117,
+    "variants": 25,
+    "seed_py_SEED": 20251020,
+    "git_commit": "4b6cbc0d95393646856aaad3675dfdb2f9cfccbc",
+    "started_utc": "2026-10-07 03:09:37"
+  },
+  "canonical": {
+    "reconcile": {
+      "pass": true,
+      "exit_code": 0,
+      "output": "PASS  row_count                    lake=96 legacy=96\nPASS  key_set                      missing=0 extra=0\nPASS  col[plant_id].mismatches     n=0\nPASS  col[line_id].mismatches      n=0\nPASS  col[iso_year].checksum       lake=194400.0000 legacy=194400.0000\nPASS  col[iso_year].mismatches     n=0\nPASS  col[iso_week].checksum       lake=4272.0000 legacy=4272.0000\nPASS  col[iso_week].mismatches     n=0\nPASS  col[good_units].checksum     lake=168959976.0000 legacy=168959976.0000\nPASS  col[good_units].mismatches   n=0\nPASS  col[scrap_units].checksum    lake=138356.0000 legacy=138356.0000\nPASS  col[scrap_units].mismatches  n=0\nPASS  col[scrap_pct].checksum      lake=8.2000 legacy=8.2000\nPASS  col[scrap_pct].mismatches    n=0\n\nPASS: scrap_yield_weekly ns=fuzz-20251117-canonical (14/14 controls) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/fuzz-20251117-canonical/reconciliation/scrap_yield_weekly.md\n"
+    },
+    "byte_compare": {
+      "pass": true,
+      "snapshot_sha256": "5fc7c1d22e904a90d8359db9af992151c569e511a4b955c04367f3806acaf3f2",
+      "lake_csv_sha256": "5fc7c1d22e904a90d8359db9af992151c569e511a4b955c04367f3806acaf3f2",
+      "snapshot_bytes": 4089,
+      "lake_bytes": 4089,
+      "snapshot_rows": 96,
+      "lake_rows": 96,
+      "matched_keys": 96,
+      "missing_keys": 0,
+      "extra_keys": 0,
+      "mismatched_rows": 0,
+      "line_terminator": "CRLF"
+    },
+    "schema": {
+      "schema_contract": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "unique_keys": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "oracle_keys": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "oracle_values": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "scrap_pct_rule": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "iso_calendar_valid": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "no_unknown_lines": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "scrap_units_le_input": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "_inputs": {
+        "rows": 61338,
+        "null_rows": 0,
+        "scrap_rows_in": 684,
+        "output_rows": 96
+      },
+      "alloc_matches_cursor_port": {
+        "pass": true,
+        "detail": "ok"
+      },
+      "alloc_conserves_qty": {
+        "pass": true,
+        "detail": "ok"
+      }
+    },
+    "rerun_deterministic": {
+      "pass": true
+    },
+    "earlier_cutoff": {
+      "as_of_utc": "2025-11-03 00:00:00",
+      "identical_to_canonical": true,
+      "reconcile_exit_code": 0,
+      "pass": true,
+      "note": "as-of-utc is accepted but not applied (legacy parity); identical output expected. KAN-9 AC4 (earlier cutoff fails) not met by design"
+    },
+    "corrupted_value": {
+      "pass": true,
+      "reconcile_exit_code": 1,
+      "mutation": "row 0 scrap_units += 1",
+      "output_tail": "  diff: key=PLT01|PLT01-L1|2025|43 col=scrap_units: lake='1610' legacy='1609'\n\nFAIL: scrap_yield_weekly ns=fuzz-20251117-corrupt (12/14 controls) -> /home/ubuntu/repos/etl-migration-sql-server-to-pyspark/out/fuzz-20251117-corrupt/reconciliation/scrap_yield_weekly.md"
+    }
+  },
+  "checker_self_test": {
+    "bankers_rounding": {
+      "caught": true,
+      "tripped": [
+        "oracle_values",
+        "scrap_pct_rule"
+      ]
+    },
+    "pct_not_null_on_zero": {
+      "caught": true,
+      "tripped": [
+        "oracle_values",
+        "scrap_pct_rule"
+      ]
+    },
+    "local_week_shift": {
+      "caught": true,
+      "tripped": [
+        "unique_keys",
+        "oracle_keys"
+      ]
+    },
+    "iso_year_off": {
+      "caught": true,
+      "tripped": [
+        "oracle_keys",
+        "iso_calendar_valid"
+      ]
+    },
+    "unknown_line_leak": {
+      "caught": true,
+      "tripped": [
+        "oracle_keys",
+        "no_unknown_lines"
+      ]
+    },
+    "duplicate_key": {
+      "caught": true,
+      "tripped": [
+        "unique_keys"
+      ]
+    },
+    "alloc_remainder_to_smallest": {
+      "caught": true,
+      "tripped": [
+        "alloc_matches_cursor_port"
+      ]
+    },
+    "alloc_drop_row": {
+      "caught": true,
+      "tripped": [
+        "alloc_matches_cursor_port",
+        "alloc_conserves_qty"
+      ]
+    }
+  },
+  "variants": [
+    {
+      "variant": 0,
+      "rng_seed": 20251117000,
+      "namespace": "fuzz-20251117-v000",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-10 16:00:00",
+      "features": {
+        "random": 741,
+        "zero_good_week": 80,
+        "duplicate_bucket": 27,
+        "unknown_sku": 17,
+        "before_window": 10,
+        "after_window": 10,
+        "order": 55,
+        "order_overlap": 84,
+        "scrap_in_overlap": 48,
+        "scrap_qty_zero": 85,
+        "order_tie": 110,
+        "scrap_order_tie": 48,
+        "order_start_eq_ts": 55,
+        "order_end_eq_ts": 55,
+        "order_end_ts_minus_1s": 55,
+        "scrap_boundary": 51,
+        "order_long_clipped": 55,
+        "scrap_long_clipped": 53,
+        "order_other_line": 55,
+        "scrap_no_order": 48,
+        "scrap_sun_235959_utc": 8,
+        "scrap_mon_000000_utc": 10,
+        "scrap_outside_week": 9,
+        "scrap_unknown_line": 10,
+        "null_field": 25,
+        "duplicate_scrap_event": 10,
+        "straddle_0600_monday": 8,
+        "at_0600": 8,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 917,
+        "null_rows": 15,
+        "scrap_rows_in": 390,
+        "output_rows": 35
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 11.46
+    },
+    {
+      "variant": 1,
+      "rng_seed": 20251117001,
+      "namespace": "fuzz-20251117-v001",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-11-14 12:00:00",
+      "features": {
+        "random": 464,
+        "straddle_0600_monday": 9,
+        "at_0600": 9,
+        "zero_good_week": 56,
+        "duplicate_bucket": 21,
+        "unknown_sku": 15,
+        "before_window": 7,
+        "after_window": 7,
+        "order": 40,
+        "order_overlap": 60,
+        "scrap_in_overlap": 36,
+        "scrap_qty_zero": 63,
+        "order_tie": 80,
+        "scrap_order_tie": 38,
+        "order_start_eq_ts": 40,
+        "order_end_eq_ts": 40,
+        "order_end_ts_minus_1s": 40,
+        "scrap_boundary": 33,
+        "order_long_clipped": 40,
+        "scrap_long_clipped": 38,
+        "order_other_line": 40,
+        "scrap_no_order": 36,
+        "scrap_sun_235959_utc": 6,
+        "scrap_mon_000000_utc": 5,
+        "scrap_outside_week": 6,
+        "scrap_unknown_line": 7,
+        "null_field": 20,
+        "duplicate_scrap_event": 7,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 597,
+        "null_rows": 8,
+        "scrap_rows_in": 287,
+        "output_rows": 28
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 5.14
+    },
+    {
+      "variant": 2,
+      "rng_seed": 20251117002,
+      "namespace": "fuzz-20251117-v002",
+      "calendar_window": "new_year_2026w01",
+      "as_of_utc": "2025-10-19 10:00:00",
+      "features": {
+        "random": 430,
+        "straddle_0600_monday": 7,
+        "at_0600": 7,
+        "zero_good_week": 56,
+        "null_field": 25,
+        "duplicate_bucket": 20,
+        "unknown_sku": 15,
+        "before_window": 7,
+        "after_window": 7,
+        "order": 34,
+        "order_overlap": 59,
+        "scrap_in_overlap": 32,
+        "scrap_qty_zero": 58,
+        "order_tie": 68,
+        "scrap_order_tie": 31,
+        "order_start_eq_ts": 34,
+        "order_end_eq_ts": 34,
+        "order_end_ts_minus_1s": 34,
+        "scrap_boundary": 29,
+        "order_long_clipped": 34,
+        "scrap_long_clipped": 30,
+        "order_other_line": 34,
+        "scrap_no_order": 28,
+        "scrap_sun_235959_utc": 7,
+        "scrap_mon_000000_utc": 7,
+        "scrap_around_jan1": 3,
+        "scrap_outside_week": 7,
+        "scrap_unknown_line": 7,
+        "duplicate_scrap_event": 7,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 564,
+        "null_rows": 16,
+        "scrap_rows_in": 257,
+        "output_rows": 23
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.84
+    },
+    {
+      "variant": 3,
+      "rng_seed": 20251117003,
+      "namespace": "fuzz-20251117-v003",
+      "calendar_window": "new_year_2026w53",
+      "as_of_utc": "2025-10-18 16:00:00",
+      "features": {
+        "random": 368,
+        "straddle_0600_monday": 6,
+        "at_0600": 6,
+        "zero_good_week": 40,
+        "null_field": 16,
+        "duplicate_bucket": 11,
+        "unknown_sku": 11,
+        "before_window": 5,
+        "after_window": 5,
+        "order": 28,
+        "order_overlap": 42,
+        "scrap_in_overlap": 25,
+        "scrap_qty_zero": 48,
+        "order_tie": 56,
+        "scrap_order_tie": 26,
+        "order_start_eq_ts": 28,
+        "order_end_eq_ts": 28,
+        "order_end_ts_minus_1s": 28,
+        "scrap_boundary": 25,
+        "order_long_clipped": 28,
+        "scrap_long_clipped": 24,
+        "order_other_line": 28,
+        "scrap_no_order": 25,
+        "scrap_mon_000000_utc": 4,
+        "scrap_outside_week": 4,
+        "scrap_unknown_line": 5,
+        "duplicate_scrap_event": 5,
+        "scrap_sun_235959_utc": 4,
+        "scrap_around_jan1": 3,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 462,
+        "null_rows": 11,
+        "scrap_rows_in": 205,
+        "output_rows": 17
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.27
+    },
+    {
+      "variant": 4,
+      "rng_seed": 20251117004,
+      "namespace": "fuzz-20251117-v004",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-06 04:00:00",
+      "features": {
+        "random": 656,
+        "straddle_0600_monday": 7,
+        "at_0600": 7,
+        "zero_good_week": 72,
+        "null_field": 36,
+        "duplicate_bucket": 23,
+        "unknown_sku": 17,
+        "before_window": 9,
+        "after_window": 9,
+        "order": 52,
+        "order_overlap": 84,
+        "scrap_in_overlap": 49,
+        "scrap_qty_zero": 75,
+        "order_tie": 104,
+        "scrap_order_tie": 45,
+        "order_start_eq_ts": 52,
+        "order_end_eq_ts": 52,
+        "order_end_ts_minus_1s": 52,
+        "scrap_boundary": 51,
+        "order_long_clipped": 52,
+        "scrap_long_clipped": 45,
+        "order_other_line": 52,
+        "scrap_no_order": 50,
+        "scrap_mon_000000_utc": 8,
+        "scrap_outside_week": 9,
+        "duplicate_scrap_event": 9,
+        "scrap_sun_235959_utc": 8,
+        "scrap_unknown_line": 8,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 818,
+        "null_rows": 18,
+        "scrap_rows_in": 376,
+        "output_rows": 30
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 5.81
+    },
+    {
+      "variant": 5,
+      "rng_seed": 20251117005,
+      "namespace": "fuzz-20251117-v005",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-11-09 23:00:00",
+      "features": {
+        "random": 552,
+        "straddle_0600_monday": 7,
+        "at_0600": 7,
+        "zero_good_week": 56,
+        "null_field": 21,
+        "duplicate_bucket": 21,
+        "unknown_sku": 13,
+        "before_window": 7,
+        "after_window": 7,
+        "order": 43,
+        "order_overlap": 64,
+        "scrap_in_overlap": 33,
+        "scrap_qty_zero": 85,
+        "order_tie": 86,
+        "scrap_order_tie": 37,
+        "order_start_eq_ts": 43,
+        "order_end_eq_ts": 43,
+        "order_end_ts_minus_1s": 43,
+        "scrap_boundary": 37,
+        "order_long_clipped": 43,
+        "scrap_long_clipped": 36,
+        "order_other_line": 43,
+        "scrap_no_order": 36,
+        "scrap_sun_235959_utc": 5,
+        "scrap_mon_000000_utc": 7,
+        "scrap_unknown_line": 6,
+        "duplicate_scrap_event": 7,
+        "scrap_outside_week": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 684,
+        "null_rows": 13,
+        "scrap_rows_in": 301,
+        "output_rows": 33
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 5.06
+    },
+    {
+      "variant": 6,
+      "rng_seed": 20251117006,
+      "namespace": "fuzz-20251117-v006",
+      "calendar_window": "new_year_2026w01",
+      "as_of_utc": "2025-11-09 20:00:00",
+      "features": {
+        "random": 509,
+        "zero_good_week": 56,
+        "duplicate_bucket": 15,
+        "unknown_sku": 15,
+        "before_window": 7,
+        "after_window": 7,
+        "order": 42,
+        "order_overlap": 64,
+        "scrap_in_overlap": 37,
+        "scrap_qty_zero": 64,
+        "order_tie": 84,
+        "scrap_order_tie": 36,
+        "order_start_eq_ts": 42,
+        "order_end_eq_ts": 42,
+        "order_end_ts_minus_1s": 42,
+        "order_long_clipped": 42,
+        "order_other_line": 42,
+        "scrap_no_order": 39,
+        "scrap_boundary": 38,
+        "scrap_long_clipped": 40,
+        "scrap_sun_235959_utc": 7,
+        "scrap_mon_000000_utc": 7,
+        "scrap_around_jan1": 6,
+        "scrap_outside_week": 6,
+        "scrap_unknown_line": 7,
+        "null_field": 15,
+        "duplicate_scrap_event": 7,
+        "straddle_0600_monday": 9,
+        "at_0600": 9,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 636,
+        "null_rows": 8,
+        "scrap_rows_in": 301,
+        "output_rows": 23
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.99
+    },
+    {
+      "variant": 7,
+      "rng_seed": 20251117007,
+      "namespace": "fuzz-20251117-v007",
+      "calendar_window": "new_year_2026w53",
+      "as_of_utc": "2025-10-26 12:00:00",
+      "features": {
+        "random": 364,
+        "straddle_0600_monday": 5,
+        "at_0600": 5,
+        "zero_good_week": 40,
+        "null_field": 15,
+        "duplicate_bucket": 14,
+        "unknown_sku": 11,
+        "before_window": 5,
+        "after_window": 5,
+        "order": 28,
+        "order_overlap": 45,
+        "scrap_in_overlap": 27,
+        "scrap_qty_zero": 38,
+        "order_tie": 56,
+        "scrap_order_tie": 26,
+        "order_start_eq_ts": 28,
+        "order_end_eq_ts": 28,
+        "order_end_ts_minus_1s": 28,
+        "scrap_boundary": 27,
+        "order_long_clipped": 28,
+        "scrap_long_clipped": 27,
+        "order_other_line": 28,
+        "scrap_no_order": 28,
+        "scrap_sun_235959_utc": 4,
+        "scrap_mon_000000_utc": 4,
+        "scrap_outside_week": 4,
+        "duplicate_scrap_event": 5,
+        "scrap_around_jan1": 4,
+        "scrap_unknown_line": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 457,
+        "null_rows": 9,
+        "scrap_rows_in": 206,
+        "output_rows": 18
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.15
+    },
+    {
+      "variant": 8,
+      "rng_seed": 20251117008,
+      "namespace": "fuzz-20251117-v008",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-10-26 07:00:00",
+      "features": {
+        "random": 348,
+        "straddle_0600_monday": 4,
+        "at_0600": 4,
+        "zero_good_week": 40,
+        "null_field": 11,
+        "duplicate_bucket": 10,
+        "unknown_sku": 8,
+        "before_window": 5,
+        "after_window": 5,
+        "order": 26,
+        "order_overlap": 43,
+        "scrap_in_overlap": 23,
+        "scrap_qty_zero": 42,
+        "order_tie": 52,
+        "scrap_order_tie": 24,
+        "order_start_eq_ts": 26,
+        "order_end_eq_ts": 26,
+        "order_end_ts_minus_1s": 26,
+        "scrap_boundary": 25,
+        "order_long_clipped": 26,
+        "scrap_long_clipped": 23,
+        "order_other_line": 26,
+        "scrap_no_order": 22,
+        "scrap_mon_000000_utc": 5,
+        "scrap_outside_week": 5,
+        "duplicate_scrap_event": 5,
+        "scrap_sun_235959_utc": 4,
+        "scrap_unknown_line": 3,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 431,
+        "null_rows": 7,
+        "scrap_rows_in": 186,
+        "output_rows": 19
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.05
+    },
+    {
+      "variant": 9,
+      "rng_seed": 20251117009,
+      "namespace": "fuzz-20251117-v009",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-11-05 18:00:00",
+      "features": {
+        "random": 465,
+        "straddle_0600_monday": 5,
+        "at_0600": 5,
+        "zero_good_week": 48,
+        "null_field": 15,
+        "duplicate_bucket": 18,
+        "unknown_sku": 12,
+        "before_window": 6,
+        "after_window": 6,
+        "order": 34,
+        "order_overlap": 52,
+        "scrap_in_overlap": 30,
+        "scrap_qty_zero": 59,
+        "order_tie": 68,
+        "scrap_order_tie": 26,
+        "order_start_eq_ts": 34,
+        "order_end_eq_ts": 34,
+        "order_end_ts_minus_1s": 34,
+        "scrap_boundary": 30,
+        "order_long_clipped": 34,
+        "scrap_long_clipped": 31,
+        "order_other_line": 34,
+        "scrap_no_order": 32,
+        "scrap_sun_235959_utc": 5,
+        "scrap_mon_000000_utc": 4,
+        "scrap_outside_week": 6,
+        "scrap_unknown_line": 5,
+        "duplicate_scrap_event": 6,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 573,
+        "null_rows": 7,
+        "scrap_rows_in": 242,
+        "output_rows": 24
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.45
+    },
+    {
+      "variant": 10,
+      "rng_seed": 20251117010,
+      "namespace": "fuzz-20251117-v010",
+      "calendar_window": "new_year_2026w01",
+      "as_of_utc": "2025-10-28 04:00:00",
+      "features": {
+        "random": 439,
+        "zero_good_week": 56,
+        "null_field": 25,
+        "duplicate_bucket": 17,
+        "unknown_sku": 17,
+        "before_window": 7,
+        "after_window": 7,
+        "order": 32,
+        "order_overlap": 47,
+        "scrap_qty_zero": 49,
+        "order_tie": 64,
+        "scrap_order_tie": 29,
+        "order_start_eq_ts": 32,
+        "order_end_eq_ts": 32,
+        "order_end_ts_minus_1s": 32,
+        "scrap_boundary": 31,
+        "order_long_clipped": 32,
+        "scrap_long_clipped": 29,
+        "order_other_line": 32,
+        "scrap_no_order": 29,
+        "scrap_in_overlap": 28,
+        "scrap_sun_235959_utc": 7,
+        "scrap_mon_000000_utc": 7,
+        "scrap_around_jan1": 6,
+        "scrap_outside_week": 6,
+        "scrap_unknown_line": 6,
+        "duplicate_scrap_event": 7,
+        "straddle_0600_monday": 5,
+        "at_0600": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 567,
+        "null_rows": 13,
+        "scrap_rows_in": 246,
+        "output_rows": 21
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.24
+    },
+    {
+      "variant": 11,
+      "rng_seed": 20251117011,
+      "namespace": "fuzz-20251117-v011",
+      "calendar_window": "new_year_2026w53",
+      "as_of_utc": "2025-10-23 14:00:00",
+      "features": {
+        "random": 588,
+        "straddle_0600_monday": 3,
+        "at_0600": 3,
+        "zero_good_week": 56,
+        "null_field": 18,
+        "duplicate_bucket": 16,
+        "unknown_sku": 14,
+        "before_window": 7,
+        "after_window": 7,
+        "order": 46,
+        "order_overlap": 73,
+        "scrap_in_overlap": 45,
+        "scrap_qty_zero": 58,
+        "order_tie": 92,
+        "scrap_order_tie": 45,
+        "order_start_eq_ts": 46,
+        "order_end_eq_ts": 46,
+        "order_end_ts_minus_1s": 46,
+        "scrap_boundary": 43,
+        "order_long_clipped": 46,
+        "scrap_long_clipped": 45,
+        "order_other_line": 46,
+        "scrap_no_order": 42,
+        "scrap_sun_235959_utc": 7,
+        "scrap_mon_000000_utc": 7,
+        "scrap_around_jan1": 5,
+        "scrap_outside_week": 7,
+        "scrap_unknown_line": 7,
+        "duplicate_scrap_event": 7,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 703,
+        "null_rows": 8,
+        "scrap_rows_in": 328,
+        "output_rows": 25
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 5.15
+    },
+    {
+      "variant": 12,
+      "rng_seed": 20251117012,
+      "namespace": "fuzz-20251117-v012",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-05 13:00:00",
+      "features": {
+        "random": 371,
+        "straddle_0600_monday": 6,
+        "at_0600": 6,
+        "zero_good_week": 48,
+        "null_field": 19,
+        "duplicate_bucket": 18,
+        "unknown_sku": 14,
+        "before_window": 6,
+        "after_window": 6,
+        "order": 30,
+        "order_overlap": 52,
+        "scrap_in_overlap": 29,
+        "scrap_qty_zero": 47,
+        "order_tie": 60,
+        "scrap_order_tie": 26,
+        "order_start_eq_ts": 30,
+        "order_end_eq_ts": 30,
+        "order_end_ts_minus_1s": 30,
+        "order_long_clipped": 30,
+        "scrap_long_clipped": 24,
+        "order_other_line": 30,
+        "scrap_no_order": 28,
+        "scrap_boundary": 27,
+        "scrap_sun_235959_utc": 6,
+        "scrap_mon_000000_utc": 6,
+        "scrap_outside_week": 6,
+        "scrap_unknown_line": 5,
+        "duplicate_scrap_event": 6,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 483,
+        "null_rows": 7,
+        "scrap_rows_in": 222,
+        "output_rows": 22
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.15
+    },
+    {
+      "variant": 13,
+      "rng_seed": 20251117013,
+      "namespace": "fuzz-20251117-v013",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-11-03 06:00:00",
+      "features": {
+        "random": 259,
+        "straddle_0600_monday": 6,
+        "at_0600": 6,
+        "zero_good_week": 32,
+        "null_field": 14,
+        "duplicate_bucket": 9,
+        "unknown_sku": 9,
+        "before_window": 4,
+        "after_window": 4,
+        "order": 23,
+        "order_overlap": 35,
+        "scrap_in_overlap": 20,
+        "scrap_qty_zero": 39,
+        "order_tie": 46,
+        "order_start_eq_ts": 23,
+        "order_end_eq_ts": 23,
+        "order_end_ts_minus_1s": 23,
+        "scrap_boundary": 21,
+        "order_long_clipped": 23,
+        "scrap_long_clipped": 20,
+        "order_other_line": 23,
+        "scrap_no_order": 23,
+        "scrap_order_tie": 17,
+        "scrap_sun_235959_utc": 4,
+        "scrap_mon_000000_utc": 3,
+        "scrap_outside_week": 4,
+        "duplicate_scrap_event": 4,
+        "scrap_unknown_line": 3,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 336,
+        "null_rows": 6,
+        "scrap_rows_in": 166,
+        "output_rows": 18
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 3.83
+    },
+    {
+      "variant": 14,
+      "rng_seed": 20251117014,
+      "namespace": "fuzz-20251117-v014",
+      "calendar_window": "new_year_2026w01",
+      "as_of_utc": "2025-11-02 13:00:00",
+      "features": {
+        "random": 604,
+        "zero_good_week": 72,
+        "null_field": 25,
+        "duplicate_bucket": 22,
+        "unknown_sku": 18,
+        "before_window": 9,
+        "after_window": 9,
+        "order": 48,
+        "order_overlap": 76,
+        "scrap_in_overlap": 44,
+        "scrap_qty_zero": 73,
+        "order_tie": 96,
+        "scrap_order_tie": 44,
+        "order_start_eq_ts": 48,
+        "order_end_eq_ts": 48,
+        "order_end_ts_minus_1s": 48,
+        "order_long_clipped": 48,
+        "scrap_long_clipped": 44,
+        "order_other_line": 48,
+        "scrap_no_order": 44,
+        "scrap_boundary": 40,
+        "scrap_sun_235959_utc": 9,
+        "scrap_mon_000000_utc": 9,
+        "scrap_around_jan1": 9,
+        "scrap_outside_week": 8,
+        "scrap_unknown_line": 9,
+        "duplicate_scrap_event": 9,
+        "straddle_0600_monday": 8,
+        "at_0600": 8,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 763,
+        "null_rows": 15,
+        "scrap_rows_in": 355,
+        "output_rows": 33
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 5.31
+    },
+    {
+      "variant": 15,
+      "rng_seed": 20251117015,
+      "namespace": "fuzz-20251117-v015",
+      "calendar_window": "new_year_2026w53",
+      "as_of_utc": "2025-10-29 05:00:00",
+      "features": {
+        "random": 620,
+        "zero_good_week": 72,
+        "duplicate_bucket": 23,
+        "unknown_sku": 17,
+        "before_window": 9,
+        "after_window": 9,
+        "order": 53,
+        "order_overlap": 74,
+        "scrap_in_overlap": 50,
+        "scrap_qty_zero": 76,
+        "order_tie": 106,
+        "scrap_order_tie": 48,
+        "order_start_eq_ts": 53,
+        "order_end_eq_ts": 53,
+        "order_end_ts_minus_1s": 53,
+        "scrap_boundary": 49,
+        "order_long_clipped": 53,
+        "scrap_long_clipped": 49,
+        "order_other_line": 53,
+        "scrap_no_order": 50,
+        "scrap_sun_235959_utc": 9,
+        "scrap_mon_000000_utc": 8,
+        "scrap_around_jan1": 8,
+        "scrap_outside_week": 8,
+        "scrap_unknown_line": 8,
+        "null_field": 24,
+        "duplicate_scrap_event": 9,
+        "straddle_0600_monday": 5,
+        "at_0600": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 771,
+        "null_rows": 11,
+        "scrap_rows_in": 386,
+        "output_rows": 32
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 5.62
+    },
+    {
+      "variant": 16,
+      "rng_seed": 20251117016,
+      "namespace": "fuzz-20251117-v016",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-02 07:00:00",
+      "features": {
+        "random": 171,
+        "zero_good_week": 32,
+        "duplicate_bucket": 11,
+        "unknown_sku": 7,
+        "before_window": 4,
+        "after_window": 4,
+        "order": 14,
+        "order_overlap": 23,
+        "scrap_qty_zero": 25,
+        "order_tie": 28,
+        "scrap_order_tie": 13,
+        "order_start_eq_ts": 14,
+        "order_end_eq_ts": 14,
+        "order_end_ts_minus_1s": 14,
+        "scrap_boundary": 14,
+        "order_long_clipped": 14,
+        "scrap_long_clipped": 14,
+        "order_other_line": 14,
+        "scrap_no_order": 10,
+        "scrap_in_overlap": 9,
+        "scrap_sun_235959_utc": 4,
+        "scrap_mon_000000_utc": 3,
+        "scrap_outside_week": 4,
+        "scrap_unknown_line": 4,
+        "duplicate_scrap_event": 4,
+        "straddle_0600_monday": 3,
+        "at_0600": 3,
+        "null_field": 10,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 240,
+        "null_rows": 4,
+        "scrap_rows_in": 110,
+        "output_rows": 15
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 3.51
+    },
+    {
+      "variant": 17,
+      "rng_seed": 20251117017,
+      "namespace": "fuzz-20251117-v017",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-11-01 15:00:00",
+      "features": {
+        "random": 714,
+        "straddle_0600_monday": 9,
+        "at_0600": 9,
+        "zero_good_week": 72,
+        "null_field": 22,
+        "duplicate_bucket": 23,
+        "unknown_sku": 17,
+        "before_window": 9,
+        "after_window": 9,
+        "order": 51,
+        "order_overlap": 84,
+        "scrap_in_overlap": 48,
+        "scrap_qty_zero": 79,
+        "order_tie": 102,
+        "order_start_eq_ts": 51,
+        "order_end_eq_ts": 51,
+        "order_end_ts_minus_1s": 51,
+        "scrap_boundary": 49,
+        "order_long_clipped": 51,
+        "scrap_long_clipped": 47,
+        "order_other_line": 51,
+        "scrap_no_order": 45,
+        "scrap_order_tie": 42,
+        "scrap_sun_235959_utc": 9,
+        "scrap_mon_000000_utc": 8,
+        "scrap_outside_week": 7,
+        "scrap_unknown_line": 8,
+        "duplicate_scrap_event": 9,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 876,
+        "null_rows": 14,
+        "scrap_rows_in": 360,
+        "output_rows": 35
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 5.5
+    },
+    {
+      "variant": 18,
+      "rng_seed": 20251117018,
+      "namespace": "fuzz-20251117-v018",
+      "calendar_window": "new_year_2026w01",
+      "as_of_utc": "2025-10-31 00:00:00",
+      "features": {
+        "random": 363,
+        "straddle_0600_monday": 5,
+        "at_0600": 5,
+        "zero_good_week": 40,
+        "null_field": 13,
+        "duplicate_bucket": 16,
+        "unknown_sku": 12,
+        "before_window": 5,
+        "after_window": 5,
+        "order": 33,
+        "order_overlap": 52,
+        "scrap_in_overlap": 28,
+        "scrap_qty_zero": 53,
+        "order_tie": 66,
+        "scrap_order_tie": 31,
+        "order_start_eq_ts": 33,
+        "order_end_eq_ts": 33,
+        "order_end_ts_minus_1s": 33,
+        "scrap_boundary": 32,
+        "order_long_clipped": 33,
+        "scrap_long_clipped": 30,
+        "order_other_line": 33,
+        "scrap_no_order": 27,
+        "scrap_sun_235959_utc": 4,
+        "scrap_mon_000000_utc": 4,
+        "scrap_around_jan1": 4,
+        "scrap_outside_week": 5,
+        "scrap_unknown_line": 5,
+        "duplicate_scrap_event": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 461,
+        "null_rows": 9,
+        "scrap_rows_in": 232,
+        "output_rows": 17
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.15
+    },
+    {
+      "variant": 19,
+      "rng_seed": 20251117019,
+      "namespace": "fuzz-20251117-v019",
+      "calendar_window": "new_year_2026w53",
+      "as_of_utc": "2025-11-01 09:00:00",
+      "features": {
+        "random": 370,
+        "zero_good_week": 56,
+        "duplicate_bucket": 17,
+        "unknown_sku": 10,
+        "before_window": 7,
+        "after_window": 7,
+        "order": 27,
+        "order_overlap": 43,
+        "scrap_in_overlap": 24,
+        "scrap_qty_zero": 46,
+        "order_tie": 54,
+        "scrap_order_tie": 23,
+        "order_start_eq_ts": 27,
+        "order_end_eq_ts": 27,
+        "order_end_ts_minus_1s": 27,
+        "scrap_boundary": 26,
+        "order_long_clipped": 27,
+        "scrap_long_clipped": 23,
+        "order_other_line": 27,
+        "scrap_no_order": 22,
+        "scrap_sun_235959_utc": 5,
+        "scrap_mon_000000_utc": 7,
+        "scrap_around_jan1": 7,
+        "scrap_outside_week": 7,
+        "scrap_unknown_line": 7,
+        "duplicate_scrap_event": 7,
+        "null_field": 19,
+        "straddle_0600_monday": 2,
+        "at_0600": 2,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 480,
+        "null_rows": 8,
+        "scrap_rows_in": 215,
+        "output_rows": 19
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 3.97
+    },
+    {
+      "variant": 20,
+      "rng_seed": 20251117020,
+      "namespace": "fuzz-20251117-v020",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-07 17:00:00",
+      "features": {
+        "random": 473,
+        "straddle_0600_monday": 10,
+        "at_0600": 10,
+        "zero_good_week": 56,
+        "null_field": 26,
+        "duplicate_bucket": 20,
+        "unknown_sku": 13,
+        "before_window": 7,
+        "after_window": 7,
+        "order": 40,
+        "order_overlap": 60,
+        "scrap_in_overlap": 38,
+        "scrap_qty_zero": 63,
+        "order_tie": 80,
+        "scrap_order_tie": 32,
+        "order_start_eq_ts": 40,
+        "order_end_eq_ts": 40,
+        "order_end_ts_minus_1s": 40,
+        "scrap_boundary": 38,
+        "order_long_clipped": 40,
+        "order_other_line": 40,
+        "scrap_no_order": 36,
+        "scrap_long_clipped": 36,
+        "scrap_sun_235959_utc": 6,
+        "scrap_mon_000000_utc": 7,
+        "scrap_unknown_line": 7,
+        "duplicate_scrap_event": 7,
+        "scrap_outside_week": 5,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 609,
+        "null_rows": 12,
+        "scrap_rows_in": 289,
+        "output_rows": 27
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.58
+    },
+    {
+      "variant": 21,
+      "rng_seed": 20251117021,
+      "namespace": "fuzz-20251117-v021",
+      "calendar_window": "spring_forward",
+      "as_of_utc": "2025-10-30 20:00:00",
+      "features": {
+        "random": 613,
+        "straddle_0600_monday": 6,
+        "at_0600": 6,
+        "zero_good_week": 72,
+        "null_field": 29,
+        "duplicate_bucket": 18,
+        "unknown_sku": 20,
+        "before_window": 9,
+        "after_window": 9,
+        "order": 47,
+        "order_overlap": 69,
+        "scrap_in_overlap": 41,
+        "scrap_qty_zero": 71,
+        "order_tie": 94,
+        "order_start_eq_ts": 47,
+        "order_end_eq_ts": 47,
+        "order_end_ts_minus_1s": 47,
+        "scrap_boundary": 41,
+        "order_long_clipped": 47,
+        "scrap_long_clipped": 44,
+        "order_other_line": 47,
+        "scrap_no_order": 46,
+        "scrap_order_tie": 42,
+        "scrap_sun_235959_utc": 9,
+        "scrap_mon_000000_utc": 9,
+        "scrap_outside_week": 9,
+        "scrap_unknown_line": 6,
+        "duplicate_scrap_event": 9,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 767,
+        "null_rows": 14,
+        "scrap_rows_in": 343,
+        "output_rows": 35
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 5.05
+    },
+    {
+      "variant": 22,
+      "rng_seed": 20251117022,
+      "namespace": "fuzz-20251117-v022",
+      "calendar_window": "new_year_2026w01",
+      "as_of_utc": "2025-10-20 15:00:00",
+      "features": {
+        "random": 469,
+        "straddle_0600_monday": 4,
+        "at_0600": 4,
+        "zero_good_week": 48,
+        "null_field": 14,
+        "duplicate_bucket": 17,
+        "unknown_sku": 11,
+        "before_window": 6,
+        "after_window": 6,
+        "order": 41,
+        "order_overlap": 59,
+        "scrap_in_overlap": 36,
+        "scrap_qty_zero": 55,
+        "order_tie": 82,
+        "scrap_order_tie": 38,
+        "order_start_eq_ts": 41,
+        "order_end_eq_ts": 41,
+        "order_end_ts_minus_1s": 41,
+        "scrap_boundary": 38,
+        "order_long_clipped": 41,
+        "scrap_long_clipped": 39,
+        "order_other_line": 41,
+        "scrap_no_order": 41,
+        "scrap_sun_235959_utc": 6,
+        "scrap_mon_000000_utc": 6,
+        "scrap_around_jan1": 6,
+        "scrap_outside_week": 5,
+        "scrap_unknown_line": 6,
+        "duplicate_scrap_event": 6,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 578,
+        "null_rows": 12,
+        "scrap_rows_in": 284,
+        "output_rows": 21
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.58
+    },
+    {
+      "variant": 23,
+      "rng_seed": 20251117023,
+      "namespace": "fuzz-20251117-v023",
+      "calendar_window": "new_year_2026w53",
+      "as_of_utc": "2025-11-13 01:00:00",
+      "features": {
+        "random": 624,
+        "straddle_0600_monday": 8,
+        "at_0600": 8,
+        "zero_good_week": 56,
+        "null_field": 23,
+        "duplicate_bucket": 23,
+        "unknown_sku": 15,
+        "before_window": 7,
+        "after_window": 7,
+        "order": 46,
+        "order_overlap": 69,
+        "scrap_in_overlap": 41,
+        "scrap_qty_zero": 82,
+        "order_tie": 92,
+        "scrap_order_tie": 40,
+        "order_start_eq_ts": 46,
+        "order_end_eq_ts": 46,
+        "order_end_ts_minus_1s": 46,
+        "scrap_boundary": 42,
+        "order_long_clipped": 46,
+        "order_other_line": 46,
+        "scrap_no_order": 40,
+        "scrap_long_clipped": 37,
+        "scrap_sun_235959_utc": 7,
+        "scrap_mon_000000_utc": 6,
+        "scrap_around_jan1": 6,
+        "scrap_outside_week": 6,
+        "duplicate_scrap_event": 7,
+        "scrap_unknown_line": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 761,
+        "null_rows": 15,
+        "scrap_rows_in": 329,
+        "output_rows": 26
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.91
+    },
+    {
+      "variant": 24,
+      "rng_seed": 20251117024,
+      "namespace": "fuzz-20251117-v024",
+      "calendar_window": "canonical_fall_back",
+      "as_of_utc": "2025-11-10 03:00:00",
+      "features": {
+        "random": 455,
+        "zero_good_week": 56,
+        "null_field": 23,
+        "duplicate_bucket": 18,
+        "unknown_sku": 16,
+        "before_window": 7,
+        "after_window": 7,
+        "order": 36,
+        "order_overlap": 57,
+        "scrap_in_overlap": 34,
+        "scrap_qty_zero": 56,
+        "order_tie": 72,
+        "scrap_order_tie": 35,
+        "order_start_eq_ts": 36,
+        "order_end_eq_ts": 36,
+        "order_end_ts_minus_1s": 36,
+        "order_long_clipped": 36,
+        "scrap_long_clipped": 31,
+        "order_other_line": 36,
+        "scrap_no_order": 30,
+        "scrap_boundary": 31,
+        "scrap_sun_235959_utc": 7,
+        "scrap_mon_000000_utc": 6,
+        "scrap_outside_week": 7,
+        "scrap_unknown_line": 7,
+        "duplicate_scrap_event": 7,
+        "straddle_0600_monday": 4,
+        "at_0600": 4,
+        "unknown_line": 1
+      },
+      "inputs": {
+        "rows": 581,
+        "null_rows": 14,
+        "scrap_rows_in": 261,
+        "output_rows": 25
+      },
+      "invariants": {
+        "schema_contract": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "unique_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_keys": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "oracle_values": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_pct_rule": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "iso_calendar_valid": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "no_unknown_lines": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "scrap_units_le_input": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_matches_cursor_port": {
+          "pass": true,
+          "detail": "ok"
+        },
+        "alloc_conserves_qty": {
+          "pass": true,
+          "detail": "ok"
+        }
+      },
+      "pass": true,
+      "violations": [],
+      "seconds": 4.32
+    }
+  ],
+  "summary": {
+    "variants_total": 25,
+    "variants_passed": 25,
+    "canonical_reconcile": true,
+    "canonical_byte_compare": true,
+    "rerun_deterministic": true,
+    "earlier_cutoff_identical": true,
+    "corrupted_value_detected": true,
+    "checker_mutants_caught": "8/8",
+    "seconds": 149.6,
+    "overall_pass": true
+  }
+}
