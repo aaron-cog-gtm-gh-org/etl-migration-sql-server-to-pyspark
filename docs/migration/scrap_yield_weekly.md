@@ -116,8 +116,29 @@ week that has any staged production. Output columns:
 
 ## Validation
 
-_To be filled by the fuzz/validation run (tools/fuzz_scrap_yield_weekly.py,
-out/validation/scrap_yield_weekly_validation.html)._
+Recorded run: `tools/run_validation.sh kan9-validation 25 scrap_yield_weekly`
+at `d8dcf36` (stacked on PR #5 incl. `419b220`), rendered with
+`tools/validation_report.py --report scrap_yield_weekly --embed-video`
+(156/156 checks pass).
+
+- **Unit tests:** 95 passed (35 KAN-9) — `out/validation/pytest_scrap_yield_weekly.xml`.
+- **Reconcile:** `PASS: scrap_yield_weekly (14/14 controls)` — row_count
+  96/96, key_set missing=0 extra=0, every column 0 mismatches, checksums equal,
+  `numeric_tolerance` unchanged.
+- **Byte-compare:** bcp-format CSV (CRLF) is byte-identical to
+  `legacy_snapshots/rpt.scrap_yield_weekly.csv`.
+- **Rerun:** deterministic (identical output).
+- **Earlier cutoff** (`2025-11-03 00:00:00`): identical output, reconcile
+  exit 0 — the expected parity result (AC4 not met by design).
+- **Corrupted value:** reconcile exit 1 (expected FAIL).
+- **Fuzz:** 25/25 variants pass vs the oracle (report + allocation vs the
+  literal cursor port); checker mutants 8/8 caught; `overall_pass: true` —
+  `out/validation/fuzz_scrap_yield_weekly.json`. Also passes with
+  `--seed 7` and `--seed 20251117`.
+- **Snapshots:** `legacy_snapshots/` sha256 unchanged before/after
+  (`rpt.scrap_yield_weekly.csv` = `5fc7c1d2…acaf3f2`); `legacy/` untouched.
+- **Recording:** `out/validation/fuzz_run_scrap_yield_weekly.{cast,mp4}`,
+  embedded in `out/validation/scrap_yield_weekly_validation.html`.
 
 ## Sign-off
 
