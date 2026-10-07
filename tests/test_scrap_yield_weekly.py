@@ -37,7 +37,7 @@ PATTERNS = [
     ("PLT01", "S3", "22:00", "06:00", 1),
 ]
 CAL_START, CAL_DAYS = date(2025, 10, 20), 28
-T = "2025-10-21 12:00:00"  # default scrap timestamp for alloc tests
+T_TS = "2025-10-21 12:00:00"  # default scrap timestamp for alloc tests
 
 
 @pytest.fixture(scope="module")
@@ -76,7 +76,7 @@ def _alloc(spark, scraps, orders):
     return {(r.scrap_id, r.order_id): r.qty_units for r in df.collect()}
 
 
-def _s(scrap_id=1, line="PLT01-L1", ts=T, qty=100, typ="contamination"):
+def _s(scrap_id=1, line="PLT01-L1", ts=T_TS, qty=100, typ="contamination"):
     return (scrap_id, line, ts, qty, typ)
 
 
@@ -369,6 +369,8 @@ def test_cli_rejects_malformed_as_of_utc():
 
 def _write_raw(dir_):
     """Minimal raw feeds: one plant/line/pattern, 2 calendar days."""
+    dir_.mkdir(parents=True, exist_ok=True)
+
     def w(name, header, rows):
         with open(dir_ / f"{name}.csv", "w", newline="") as f:
             wr = csv.writer(f)

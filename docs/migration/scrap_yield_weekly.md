@@ -81,20 +81,21 @@ week that has any staged production. Output columns:
 
 ## Ticket conflicts / AC notes
 
-- **AC3** (canonical reconcile green): **blocked pending the `SKU-XX99`
-  seed decision.** PR #5's seed added two `SKU-XX99` production_count rows
-  (good_units 2350 each) which count toward `good_units` here because the
-  rpt proc has no `dim.sku` join. Reconcile currently fails on exactly 2
-  rows — `(PLT02,PLT02-L3,2025,43)` and `(PLT05,PLT05-L1,2025,45)`, each
-  `good_units` +2350 — and everything else matches (oracle-verified). No
-  sku filter was added: that would deviate from legacy.
+- **AC3** (canonical reconcile green): PR #5's seed added two `SKU-XX99`
+  production_count rows (good_units 2350 each) which counted toward
+  `good_units` here because the rpt proc has no `dim.sku` join — reconcile
+  failed on exactly 2 rows (`(PLT02,PLT02-L3,2025,43)` and
+  `(PLT05,PLT05-L1,2025,45)`, each +2350). User-approved fix: the seed rows
+  now carry `total_units=0, good_units=0` (they remain unknown-SKU rows, so
+  `daily_production` still drops them and its snapshot is unchanged).
+  Reconcile is expected 96/96 with 0 diffs.
 - **AC4** (earlier cutoff makes reconcile fail): not met by design,
   user-approved; see deviation 4.
 
 ## Open questions
 
-- `SKU-XX99` seed rows: keep (and accept the 2-row diff), remove from the
-  seed, or relabel — decision pending with the requester.
+- `SKU-XX99` seed rows: **resolved** — kept as rows but zeroed, so
+  `stg.production_local` consumers keep snapshot parity (see AC3).
 - The `±7200` in the alloc proc is read as **seconds** (the DATEADD bounds
   in the same WHERE clause). No alternative reading was found that matches
   the cursor-port oracle on the seed; confirm if a dissenting legacy

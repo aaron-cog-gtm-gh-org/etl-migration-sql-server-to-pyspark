@@ -7,6 +7,7 @@ legacy SqlServerStoredProcedure activities.
 | pipeline | job | replaces |
 |---|---|---|
 | `pipeline/PL_Daily_Production.json` | `mfg_lake.jobs.daily_production` | `SP_StgProductionCounts`, `SP_RptDailyProduction`, `COPY_rpt_daily_production_to_curated` |
+| `pipeline/PL_Scrap_Yield.json` | `mfg_lake.jobs.scrap_yield_weekly` | `SP_AllocateScrapToOrders`, `SP_RptScrapYieldWeekly`, `COPY_rpt_scrap_yield_weekly_to_curated` |
 
 Contract kept for each converted pipeline: same pipeline name, same
 `AsOfUtc` parameter (so `PL_Master`'s `ExecutePipeline` activities are
