@@ -19,6 +19,7 @@ import math
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -50,7 +51,10 @@ def load_lake(report: str, ns: str) -> pd.DataFrame:
 
 def _norm(v):
     """Normalize a cell to a canonical string for equality checks."""
-    if v is None or (isinstance(v, float) and math.isnan(v)):
+    # parquet bool dtype -> bcp BIT text; check before anything numeric
+    if isinstance(v, (bool, np.bool_)):
+        return "1" if v else "0"
+    if v is None or v is pd.NA or (isinstance(v, float) and math.isnan(v)):
         return ""
     if isinstance(v, pd.Timestamp):
         return v.strftime("%Y-%m-%d %H:%M:%S") if (v.hour or v.minute or v.second) \

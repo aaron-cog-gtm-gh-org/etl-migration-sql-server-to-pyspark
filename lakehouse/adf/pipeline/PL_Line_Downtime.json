@@ -1,0 +1,26 @@
+{
+  "name": "PL_Line_Downtime",
+  "properties": {
+    "description": "Converted (KAN-8): mes.usp_stg_downtime_local + mes.usp_split_downtime_by_shift + rpt.usp_rpt_line_downtime_daily + the Copy to curated are replaced by one Spark job (mfg_lake.jobs.line_downtime_daily). The job builds the shift calendar itself and writes snappy Parquet to abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/line_downtime_daily — the same location DS_ADLS_Curated_Parquet (report=line_downtime_daily) resolved to; the curated parquet sink is unchanged.",
+    "parameters": { "AsOfUtc": { "type": "string" } },
+    "activities": [
+      {
+        "name": "SPK_LineDowntimeDaily",
+        "type": "DatabricksSparkPython",
+        "typeProperties": {
+          "pythonFile": "dbfs:/jobs/mfg_lake/jobs/line_downtime_daily.py",
+          "parameters": ["--ns", "prod",
+                         "--as-of-utc", "@pipeline().parameters.AsOfUtc"],
+          "libraries": [{ "pypi": { "package": "pyspark==3.5.3" } }]
+        },
+        "linkedServiceName": { "referenceName": "LS_Databricks_Mfg", "type": "LinkedServiceReference" },
+        "policy": { "timeout": "0.12:00:00", "retry": 2, "retryIntervalInSeconds": 60 },
+        "userProperties": [
+          { "name": "sink", "value": "abfss://curated@kcmfglake.dfs.core.windows.net/manufacturing/line_downtime_daily" },
+          { "name": "sinkFormat", "value": "parquet (snappy), overwrite" },
+          { "name": "legacyActivities", "value": "SP_StgDowntimeLocal, SP_SplitDowntimeByShift, SP_RptLineDowntimeDaily, COPY_rpt_line_downtime_daily_to_curated" }
+        ]
+      }
+    ]
+  }
+}
