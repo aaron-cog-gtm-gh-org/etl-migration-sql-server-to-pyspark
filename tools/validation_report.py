@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Render out/validation/daily_production_validation.html from the fuzz JSON
+"""Render out/validation/<report>_validation.html from the fuzz JSON
 log, the reconcile contract and the pytest junit XML.
 
-    python tools/validation_report.py [--embed-video]
+    python tools/validation_report.py [--report <report>] [--embed-video]
+
+--report defaults to daily_production and reproduces the original KAN-6
+page. For other reports the log's `report_meta` block supplies the ticket,
+pipeline, table, parity notes and earlier-cutoff expectation; without it
+the KAN-6 text is used as fallback.
 """
 import argparse
 import base64
@@ -54,29 +59,38 @@ def junit(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--log", default=str(VAL / "fuzz_daily_production.json"))
-    ap.add_argument("--out", default=str(VAL / "daily_production_validation.html"))
-    ap.add_argument("--video", default="fuzz_run.mp4")
-    ap.add_argument("--cast", default="fuzz_run.cast")
+    ap.add_argument("--report", default="daily_production")
+    a0, _ = ap.parse_known_args()
+    rep = a0.report
+    suffix = "" if rep == "daily_production" else f"_{rep}"
+    ap.add_argument("--log", default=str(VAL / f"fuzz_{rep}.json"))
+    ap.add_argument("--out", default=str(VAL / f"{rep}_validation.html"))
+    ap.add_argument("--video", default=f"fuzz_run{suffix}.mp4")
+    ap.add_argument("--cast", default=f"fuzz_run{suffix}.cast")
     ap.add_argument("--embed-video", action="store_true")
     a = ap.parse_args()
     r = json.loads(Path(a.log).read_text())
+    meta = r.get("report_meta") or {}
+    ticket = meta.get("ticket", "KAN-6")
+    pipeline = meta.get("pipeline", "PL_Daily_Production")
+    table = meta.get("table", "rpt.daily_production")
+    junit_xml = VAL / ("pytest.xml" if rep == "daily_production" else f"pytest_{rep}.xml")
     cfg = yaml.safe_load((ROOT / "tools" / "reconcile_config.yaml").read_text())
     env, c, s = r["environment"], r["canonical"], r["summary"]
     bc = c["byte_compare"]
-    tests = junit(VAL / "pytest.xml")
+    tests = junit(junit_xml)
     checks = []  # (section, check, ok, detail)
 
     # ---- schema contract
     schema_inv = c["schema"]["schema_contract"]
-    snap_header = (ROOT / "legacy_snapshots" / "rpt.daily_production.csv").read_text().splitlines()[0]
+    snap_header = (ROOT / "legacy_snapshots" / f"{table}.csv").read_text().splitlines()[0]
     rows = []
-    for name, typ, null in ddl_columns():
+    for name, typ, null in ddl_columns(table):
         exp = LAKE_TYPE.get(typ.replace(" ", ""), "?")
         in_snap = name in snap_header.split(",")
         rows.append(f"<tr><td>{E(name)}</td><td>{E(typ)} {null}</td><td>{E(exp)}</td>"
                     f"<td>{badge(in_snap, 'yes', 'no')}</td></tr>")
-    checks.append(("Schema", "parquet columns/types == rpt.daily_production DDL",
+    checks.append(("Schema", f"parquet columns/types == {table} DDL",
                    schema_inv["pass"], schema_inv["detail"]))
 
     # ---- reconcile
@@ -94,9 +108,11 @@ def main():
                    c["corrupted_value"]["pass"],
                    f"{c['corrupted_value']['mutation']} -> exit {c['corrupted_value']['reconcile_exit_code']}"))
     ec = c["earlier_cutoff"]
+    ec_note = meta.get("earlier_cutoff_note",
+                       "KAN-6 AC4 expects a FAIL here (see deviations)")
     checks.append(("Adversarial", f"earlier cutoff {ec['as_of_utc']} (as-of not applied)",
                    ec["pass"], f"identical={ec['identical_to_canonical']}, reconcile exit "
-                   f"{ec['reconcile_exit_code']}; KAN-6 AC4 expects a FAIL here (see deviations)"))
+                   f"{ec['reconcile_exit_code']}; {ec_note}"))
     for name, inv in c["schema"].items():
         if not name.startswith("_") and name != "schema_contract":
             checks.append(("Canonical invariants", name, inv["pass"], inv["detail"]))
@@ -137,9 +153,34 @@ def main():
     ctrl_rows = "".join(f"<tr><td>{E(n)}</td><td>{E(d)}</td><td>{badge(p == 'PASS')}</td></tr>"
                         for p, n, d in ctrl)
     overall = s["overall_pass"]
+    if meta.get("fuzz_intro"):
+        fuzz_intro = meta["fuzz_intro"]
+    elif meta:
+        fuzz_intro = (f"{s['variants_total']} variants (fuzz seed {env['fuzz_seed']}). "
+                      "Each variant ran the job in a throwaway namespace and was checked for:\n"
+                      + ", ".join(f"<code>{E(n)}</code>" for n in inv_names)
+                      + ". The oracle invariants compare every output row (and the scrap "
+                      "allocation) against an independent pure-Python port of the legacy procs.")
+    else:
+        fuzz_intro = (f"{s['variants_total']} variants of <code>mes.production_count</code> "
+                      f"(fuzz seed {env['fuzz_seed']}). Each variant ran the job in a "
+                      "throwaway namespace and was checked for:\n"
+                      + ", ".join(f"<code>{E(n)}</code>" for n in inv_names)
+                      + ". <code>oracle_values</code> / <code>production_day_local_rule</code> "
+                      "compare every output row against an independent pure-Python "
+                      "implementation of the legacy procs (zoneinfo, Decimal "
+                      "half-away-from-zero).")
+    parity_lis = "".join(f"<li>{n}</li>" for n in meta.get("parity_notes", [])) or """
+<li><b>Earlier cutoff (KAN-6 AC4).</b> <code>--as-of-utc</code> is accepted and not applied, as in the legacy pipeline (PL_Master never passes AsOfUtc to the procs; the window is <code>MIN(dim.calendar)</code> + <code>WindowDays</code>). An earlier cutoff therefore yields identical output and reconcile passes. Meeting AC4's "earlier cutoff fails" would require a deliberate deviation from legacy, and filtering on <code>bucket_start_utc &lt; AsOfUtc</code> would also break parity, because the extract includes 2025-11-16 production-day buckets after 2025-11-17 00:00 UTC.</li>
+<li><b>Canonical seed edge cases.</b> The extract is fixed, so the canonical seed can only carry edge cases that don't change its totals: zero-total buckets, a whole zero-total day (PLT06-L4, 2025-11-04, <code>yield_pct</code> NULL), 75-minute fall-back buckets, and <code>SKU-XX99</code> rows (dropped). Buckets that straddle 06:00 or a shift edge, spring-forward days, NULLs and duplicates are covered by the unit tests and the fuzz variants instead.</li>
+<li><b>No seed tuning was needed.</b> The pre-existing seed already reproduces the extract exactly. The seed was not fitted to the snapshot.</li>
+<li><b>Line terminator.</b> MANIFEST shows <code>bcp -r\\n</code>, but the committed extract uses CRLF. The byte-compare renders CRLF.</li>
+<li><b>NULL counts</b> (impossible in legacy because the columns are NOT NULL) are dropped and counted, not failed. <b>INT overflow</b> raises, like SQL Server's arithmetic overflow.</li>
+<li><b>Ambiguous / gap local times</b> follow java.time / zoneinfo fold=0, the documented AT TIME ZONE behaviour. This was not verified against a live SQL Server, and no current shift bound falls in such a window.</li>
+<li>The ADF JSON in <code>lakehouse/adf/</code> was reviewed, not deployed. Nothing here ran on ADF or Databricks.</li>"""
 
     doc = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>daily_production validation — KAN-6</title>
+<title>{E(rep)} validation — {E(ticket)}</title>
 <style>
 :root{{--ok:#1f7a4d;--ko:#b3261e;--ink:#1d2433;--mute:#5b6577;--line:#e3e6ec;--bg:#f7f8fa}}
 *{{box-sizing:border-box}}body{{margin:0;font:14px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}}
@@ -162,8 +203,8 @@ video{{width:100%;border-radius:8px;border:1px solid var(--line);background:#000
 input{{padding:6px 9px;border:1px solid var(--line);border-radius:6px;width:320px;margin-bottom:8px}}
 ul li{{margin:4px 0}}
 </style></head><body><main>
-<h1>PL_Daily_Production → <code>mfg_lake.jobs.daily_production</code> — validation</h1>
-<p class="sub">KAN-6 · report <code>daily_production</code> vs <code>legacy_snapshots/rpt.daily_production.csv</code> ·
+<h1>{E(pipeline)} → <code>mfg_lake.jobs.{E(rep)}</code> — validation</h1>
+<p class="sub">{E(ticket)} · report <code>{E(rep)}</code> vs <code>legacy_snapshots/{E(table)}.csv</code> ·
 AS_OF_UTC <code>{E(env['as_of_utc'])}</code> · commit <code>{E(env['git_commit'][:10])}</code> · generated {E(env['started_utc'])} UTC</p>
 <div class="banner {'ok' if overall else 'ko'}">{'ALL VALIDATION PASSED' if overall else 'VALIDATION FAILED'} — {n_ok}/{len(checks)} checks pass</div>
 <div class="cards">
@@ -181,20 +222,19 @@ AS_OF_UTC <code>{E(env['as_of_utc'])}</code> · commit <code>{E(env['git_commit'
 Video: <a href="{E(a.video)}">{E(a.video)}</a> · asciinema cast: <a href="{E(a.cast)}">{E(a.cast)}</a> (<code>asciinema play {E(a.cast)}</code>)</p>
 <video controls preload="metadata" src="{src}"></video>
 
-<h2>1 · Schema / column contract vs <code>rpt.daily_production</code></h2>
+<h2>1 · Schema / column contract vs <code>{E(table)}</code></h2>
 <table><tr><th>column</th><th>legacy DDL (legacy/sql/schema/rpt.sql)</th><th>expected lake parquet type</th><th>in snapshot header</th></tr>{''.join(rows)}</table>
 <p>Lake parquet schema check: {badge(schema_inv['pass'])} {E(schema_inv['detail'])}</p>
 
 <h2>2 · Reconcile diff summary (canonical seed)</h2>
-<p><code>tools/reconcile.py --report daily_production</code>: keys <code>{E(', '.join(cfg['reports']['daily_production']['keys']))}</code>,
+<p><code>tools/reconcile.py --report {E(rep)}</code>: keys <code>{E(', '.join(cfg['reports'][rep]['keys']))}</code>,
 numeric tolerance <code>{cfg['numeric_tolerance']}</code> (absolute).
 Byte-compare renders the lake output in the MANIFEST bcp format (ORDER BY key, NULL = empty, 2-dp decimals) with the extract's <code>{E(bc['line_terminator'])}</code> row terminator.
 Snapshot {bc['snapshot_bytes']} bytes, sha256 <code>{E(bc['snapshot_sha256'])}</code>; lake CSV {bc['lake_bytes']} bytes, sha256 <code>{E(bc['lake_csv_sha256'])}</code>.</p>
 <table><tr><th>control</th><th>detail</th><th>result</th></tr>{ctrl_rows}</table>
 
 <h2>3 · Fuzz variants</h2>
-<p>{s['variants_total']} variants of <code>mes.production_count</code> (fuzz seed {env['fuzz_seed']}). Each variant ran the job in a throwaway namespace and was checked for:
-{', '.join(f'<code>{E(n)}</code>' for n in inv_names)}. <code>oracle_values</code> / <code>production_day_local_rule</code> compare every output row against an independent pure-Python implementation of the legacy procs (zoneinfo, Decimal half-away-from-zero).</p>
+<p>{fuzz_intro}</p>
 <div class="scroll"><table><tr><th>#</th><th>rng seed</th><th>calendar</th><th>as_of_utc (ignored)</th><th>rows in</th><th>NULL rows</th><th>rows out</th><th>edge cases generated</th><th>result</th><th>invariant violated</th></tr>{''.join(vrows)}</table></div>
 
 <h2>4 · Every check performed</h2>
@@ -202,14 +242,7 @@ Snapshot {bc['snapshot_bytes']} bytes, sha256 <code>{E(bc['snapshot_sha256'])}</
 <div class="scroll"><table id="all"><tr><th>#</th><th>section</th><th>check</th><th>result</th><th>detail</th></tr>{all_rows}</table></div>
 
 <h2>5 · Parity notes and deviations</h2>
-<ul>
-<li><b>Earlier cutoff (KAN-6 AC4).</b> <code>--as-of-utc</code> is accepted and not applied, as in the legacy pipeline (PL_Master never passes AsOfUtc to the procs; the window is <code>MIN(dim.calendar)</code> + <code>WindowDays</code>). An earlier cutoff therefore yields identical output and reconcile passes. Meeting AC4's "earlier cutoff fails" would require a deliberate deviation from legacy, and filtering on <code>bucket_start_utc &lt; AsOfUtc</code> would also break parity, because the extract includes 2025-11-16 production-day buckets after 2025-11-17 00:00 UTC.</li>
-<li><b>Canonical seed edge cases.</b> The extract is fixed, so the canonical seed can only carry edge cases that don't change its totals: zero-total buckets, a whole zero-total day (PLT06-L4, 2025-11-04, <code>yield_pct</code> NULL), 75-minute fall-back buckets, and <code>SKU-XX99</code> rows (dropped). Buckets that straddle 06:00 or a shift edge, spring-forward days, NULLs and duplicates are covered by the unit tests and the fuzz variants instead.</li>
-<li><b>No seed tuning was needed.</b> The pre-existing seed already reproduces the extract exactly. The seed was not fitted to the snapshot.</li>
-<li><b>Line terminator.</b> MANIFEST shows <code>bcp -r\\n</code>, but the committed extract uses CRLF. The byte-compare renders CRLF.</li>
-<li><b>NULL counts</b> (impossible in legacy because the columns are NOT NULL) are dropped and counted, not failed. <b>INT overflow</b> raises, like SQL Server's arithmetic overflow.</li>
-<li><b>Ambiguous / gap local times</b> follow java.time / zoneinfo fold=0, the documented AT TIME ZONE behaviour. This was not verified against a live SQL Server, and no current shift bound falls in such a window.</li>
-<li>The ADF JSON in <code>lakehouse/adf/</code> was reviewed, not deployed. Nothing here ran on ADF or Databricks.</li>
+<ul>{parity_lis}
 </ul>
 
 <h2>6 · Environment</h2>
