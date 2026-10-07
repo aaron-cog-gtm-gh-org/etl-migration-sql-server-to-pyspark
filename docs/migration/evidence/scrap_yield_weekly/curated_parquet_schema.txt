@@ -1,0 +1,7 @@
+plant_id: string
+line_id: string
+iso_year: int32
+iso_week: int32
+good_units: int32
+scrap_units: int32 not null
+scrap_pct: decimal128(9, 2)
